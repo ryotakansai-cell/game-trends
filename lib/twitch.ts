@@ -130,3 +130,89 @@ export function formatViewers(n: number) {
   if (n >= 10000) return `${(n / 10000).toFixed(1)}万`;
   return n.toLocaleString("ja-JP");
 }
+
+// ============================================
+// 配信者ランキング用
+// ============================================
+
+export type TwitchStreamFull = {
+  id: string;
+  user_id: string;
+  user_login: string;
+  user_name: string;
+  game_id: string;
+  game_name: string;
+  type: string;
+  title: string;
+  viewer_count: number;
+  started_at: string;
+  language: string;
+  thumbnail_url: string;
+  tags: string[] | null;
+};
+
+/** 配信中のストリームを視聴者数順に取得する */
+export async function getTopStreams(options?: {
+  language?: string;
+  gameId?: string;
+  limit?: number;
+}) {
+  const params = new URLSearchParams();
+  params.set("first", String(options?.limit ?? 40));
+  if (options?.language) params.set("language", options.language);
+  if (options?.gameId) params.set("game_id", options.gameId);
+
+  return twitchFetch<TwitchStreamFull>(`/streams?${params.toString()}`);
+}
+
+/** サムネイルURLのプレースホルダを実サイズに置換する */
+export function streamThumb(url: string, width = 440, height = 248) {
+  return url
+    .replace("{width}", String(width))
+    .replace("{height}", String(height));
+}
+
+/** 配信開始からの経過時間を「3時間20分」の形にする */
+export function elapsedSince(startedAt: string) {
+  const diffMs = Date.now() - new Date(startedAt).getTime();
+  const minutes = Math.floor(diffMs / 60000);
+  const hours = Math.floor(minutes / 60);
+
+  if (hours === 0) return `${minutes}分`;
+  return `${hours}時間${minutes % 60}分`;
+}
+/** 特定のゲーム1件を取得する */
+export async function getGameById(gameId: string) {
+  const games = await twitchFetch<TwitchGame>(`/games?id=${gameId}`);
+  return games[0] ?? null;
+}
+export type TwitchUser = {
+  id: string;
+  login: string;
+  display_name: string;
+  profile_image_url: string;
+  description: string;
+};
+
+/** ログイン名の配列からユーザー情報をまとめて取得する */
+export async function getUsersByLogin(logins: string[]) {
+  const map = new Map<string, TwitchUser>();
+  if (logins.length === 0) return map;
+
+  // Twitch APIは1回100件までなので分割する
+  const chunks: string[][] = [];
+  for (let i = 0; i < logins.length; i += 100) {
+    chunks.push(logins.slice(i, i + 100));
+  }
+
+  const results = await Promise.all(
+    chunks.map((chunk) => {
+      const params = new URLSearchParams();
+      chunk.forEach((login) => params.append("login", login));
+      return twitchFetch<TwitchUser>(`/users?${params.toString()}`);
+    }),
+  );
+
+  results.flat().forEach((user) => map.set(user.login, user));
+  return map;
+}
