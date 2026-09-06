@@ -52,7 +52,7 @@ export default async function Home({ searchParams }: Props) {
       <div className="mt-6 flex gap-2">
         <Link
           href="/"
-          className={`rounded-full px-4 py-1.5 text-sm transition ${
+        className={`rounded-full px-4 py-1.5 text-sm transition ${
             isJapanese
               ? "bg-purple-500 text-white"
               : "bg-white/5 text-gray-400 hover:bg-white/10"
@@ -110,10 +110,8 @@ export default async function Home({ searchParams }: Props) {
             </p>
 
             <div className="mt-2 flex items-center gap-2 text-sm">
-              <a
-                href={`https://twitch.tv/${stream.user_login}`}
-                target="_blank"
-                rel="noopener noreferrer"
+              <Link
+                href={`/streamers/${stream.user_login}`}
                 className="flex shrink-0 items-center gap-2 text-gray-300 hover:text-purple-300"
               >
                 {users.get(stream.user_login) && (
@@ -126,7 +124,7 @@ export default async function Home({ searchParams }: Props) {
                   />
                 )}
                 <span className="truncate">{stream.user_name}</span>
-              </a>
+              </Link>
               {stream.game_id && (
                 <>
                   <span className="text-gray-700">·</span>

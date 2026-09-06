@@ -216,3 +216,86 @@ export async function getUsersByLogin(logins: string[]) {
   results.flat().forEach((user) => map.set(user.login, user));
   return map;
 }
+export type TwitchClip = {
+  id: string;
+  url: string;
+  broadcaster_id: string;
+  creator_name: string;
+  game_id: string;
+  title: string;
+  view_count: number;
+  created_at: string;
+  thumbnail_url: string;
+  duration: number;
+};
+
+export type TwitchVideo = {
+  id: string;
+  user_id: string;
+  title: string;
+  created_at: string;
+  url: string;
+  thumbnail_url: string;
+  view_count: number;
+  duration: string;
+};
+
+/** ログイン名から1人分のユーザー情報を取得 */
+export async function getUserByLogin(login: string) {
+  const users = await twitchFetch<TwitchUser>(
+    `/users?login=${encodeURIComponent(login)}`,
+  );
+  return users[0] ?? null;
+}
+
+/** その人が今配信中かどうかを取得（配信していなければ null） */
+export async function getStreamByLogin(login: string) {
+  const streams = await twitchFetch<TwitchStreamFull>(
+    `/streams?user_login=${encodeURIComponent(login)}`,
+  );
+  return streams[0] ?? null;
+}
+
+/** 直近N日間の人気クリップを取得 */
+export async function getClipsByBroadcaster(
+  broadcasterId: string,
+  days = 7,
+  limit = 12,
+) {
+  const startedAt =
+    new Date(Date.now() - days * 86400000).toISOString().split(".")[0] + "Z";
+
+  const params = new URLSearchParams({
+    broadcaster_id: broadcasterId,
+    first: String(limit),
+    started_at: startedAt,
+  });
+
+  return twitchFetch<TwitchClip>(`/clips?${params.toString()}`);
+}
+
+/** 過去の配信アーカイブを取得 */
+export async function getVideosByUser(userId: string, limit = 6) {
+  const params = new URLSearchParams({
+    user_id: userId,
+    first: String(limit),
+    type: "archive",
+    sort: "time",
+  });
+
+  return twitchFetch<TwitchVideo>(`/videos?${params.toString()}`);
+}
+
+/** 動画サムネのプレースホルダを置換（%{width} 形式にも対応） */
+export function videoThumb(url: string, width = 320, height = 180) {
+  return url
+    .replace("%{width}", String(width))
+    .replace("%{height}", String(height))
+    .replace("{width}", String(width))
+    .replace("{height}", String(height));
+}
+
+/** ISO日時を「2026/9/6」の形に */
+export function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString("ja-JP");
+}

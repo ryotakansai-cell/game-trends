@@ -119,7 +119,9 @@ export default async function GameDetailPage({ params }: Props) {
               <p className="mt-3 line-clamp-2 text-sm font-bold text-gray-100">
                 {stream.title}
               </p>
-              <p className="mt-1 text-sm text-gray-400">{stream.user_name}</p>
+               <Link href={`/streamers/${stream.user_login}`} className="mt-1 inline-block text-sm text-gray-400 transition hover:text-purple-400 hover:underline">
+                {stream.user_name} →
+              </Link>
             </li>
           ))}
         </ul>
