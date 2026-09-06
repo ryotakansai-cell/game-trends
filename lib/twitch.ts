@@ -70,3 +70,63 @@ export function boxArt(url: string, width = 285, height = 380) {
 export function isRealGame(game: TwitchGame) {
   return game.igdb_id !== "";
 }
+
+export type TwitchStream = {
+  id: string;
+  user_name: string;
+  game_id: string;
+  title: string;
+  viewer_count: number;
+  language: string;
+};
+
+async function helixPage<T>(
+  path: string,
+  cursor?: string,
+): Promise<{ data: T[]; cursor?: string }> {
+  const { clientId } = getCredentials();
+  const token = await getAccessToken();
+
+  const url = new URL(`${HELIX}${path}`);
+  if (cursor) url.searchParams.set("after", cursor);
+
+  const res = await fetch(url, {
+    headers: {
+      "Client-Id": clientId,
+      Authorization: `Bearer ${token}`,
+    },
+    next: { revalidate: 300 },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Twitch APIエラー ${res.status}: ${await res.text()}`);
+  }
+
+  const json = await res.json();
+  return { data: json.data as T[], cursor: json.pagination?.cursor };
+}
+
+export async function getViewerCountByGame(pages = 5) {
+  const counts = new Map<string, number>();
+  let cursor: string | undefined = undefined;
+
+  for (let i = 0; i < pages; i++) {
+    const page: { data: TwitchStream[]; cursor?: string } =
+      await helixPage<TwitchStream>("/streams?first=100", cursor);
+
+    for (const stream of page.data) {
+      const current = counts.get(stream.game_id) ?? 0;
+      counts.set(stream.game_id, current + stream.viewer_count);
+    }
+
+    if (!page.cursor) break;
+    cursor = page.cursor;
+  }
+
+  return counts;
+}
+
+export function formatViewers(n: number) {
+  if (n >= 10000) return `${(n / 10000).toFixed(1)}万`;
+  return n.toLocaleString("ja-JP");
+}
