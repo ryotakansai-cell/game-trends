@@ -17,6 +17,11 @@ export const metadata: Metadata = {
   description: "Twitchでいま盛り上がっているゲームがわかるサイト",
 };
 
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+};
+
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
