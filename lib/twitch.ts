@@ -299,3 +299,20 @@ export function videoThumb(url: string, width = 320, height = 180) {
 export function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("ja-JP");
 }
+
+/** 上位配信者を複数ページぶん取得する（配信者スナップショット用） */
+export async function getTopStreamsPaged(pages = 8) {
+  const streams: TwitchStreamFull[] = [];
+  let cursor: string | undefined = undefined;
+
+  for (let i = 0; i < pages; i++) {
+    const page: { data: TwitchStreamFull[]; cursor?: string } =
+      await helixPage<TwitchStreamFull>("/streams?first=100", cursor);
+    streams.push(...page.data);
+
+    if (!page.cursor) break;
+    cursor = page.cursor;
+  }
+
+  return streams;
+}
