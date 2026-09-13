@@ -30,10 +30,22 @@ export default async function GameDetailPage({ params }: Props) {
   const query = encodeURIComponent(game.name);
 
   const links = [
-    { label: "YouTubeで検索", url: `https://www.youtube.com/results?search_query=${query}+実況` },
-    { label: "Steamで検索", url: `https://store.steampowered.com/search/?term=${query}` },
-    { label: "Twitchで開く", url: `https://www.twitch.tv/directory/game/${query}` },
-    { label: "Google検索", url: `https://www.google.com/search?q=${query}+攻略` },
+    {
+      label: "YouTubeで検索",
+      url: `https://www.youtube.com/results?search_query=${query}+実況`,
+    },
+    {
+      label: "Steamで検索",
+      url: `https://store.steampowered.com/search/?term=${query}`,
+    },
+    {
+      label: "Twitchで開く",
+      url: `https://www.twitch.tv/directory/game/${query}`,
+    },
+    {
+      label: "Google検索",
+      url: `https://www.google.com/search?q=${query}+攻略`,
+    },
   ];
 
   return (
@@ -55,7 +67,7 @@ export default async function GameDetailPage({ params }: Props) {
         <div className="flex-1">
           <h1 className="text-2xl font-bold text-gray-100">{game.name}</h1>
           <p className="mt-1 text-sm text-gray-400">
-            {streams.length}配信 ・ 
+            {streams.length}配信 ・
             <span className="font-bold text-purple-300">
               {formatViewers(totalViewers)}人
             </span>
@@ -119,7 +131,10 @@ export default async function GameDetailPage({ params }: Props) {
               <p className="mt-3 line-clamp-2 text-sm font-bold text-gray-100">
                 {stream.title}
               </p>
-               <Link href={`/streamers/${stream.user_login}`} className="mt-1 inline-block text-sm text-gray-400 transition hover:text-purple-400 hover:underline">
+              <Link
+                href={`/streamers/${stream.user_login}`}
+                className="mt-1 inline-block text-sm text-gray-400 transition hover:text-purple-400 hover:underline"
+              >
                 {stream.user_name} →
               </Link>
             </li>
