@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getTopGames, getViewerCountByGame, isRealGame } from "@/lib/twitch";
-import { createWriteClient } from "@/lib/supabase";
+import { getDbClient } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -20,29 +20,33 @@ export async function GET(request: NextRequest) {
     ]);
 
     const games = topGames.filter(isRealGame);
-    const supabase = createWriteClient();
+    const db = getDbClient();
 
-    // ③ games を UPSERT
-    const gameRows = games.map((g) => ({
-      id: g.id,
-      name: g.name,
-      box_art_url: g.box_art_url,
-      igdb_id: g.igdb_id || null,
-      updated_at: new Date().toISOString(),
-    }));
 
-    const { error: gamesError } = await supabase
-      .from("games")
-      .upsert(gameRows, { onConflict: "id" });
+// ③ games を UPSERT
+const gameRows = games.map((g) => ({
+  id: g.id,
+  name: g.name,
+  box_art_url: g.box_art_url,
+  igdb_id: g.igdb_id || null,
+  updated_at: new Date().toISOString(),
+}));
 
-    if (gamesError) {
-      console.error(gamesError);
-      return NextResponse.json(
-        { step: "games", error: gamesError.message },
-        { status: 500 },
-      );
-    }
-
+await db.batch(
+  gameRows.map((g) => ({
+    sql: `
+      INSERT INTO games (id, name, box_art_url, igdb_id, updated_at)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        box_art_url = excluded.box_art_url,
+        igdb_id = excluded.igdb_id,
+        updated_at = excluded.updated_at
+    `,
+    args: [g.id, g.name, g.box_art_url, g.igdb_id, g.updated_at],
+  })),
+  "write",
+);
     // ④ snapshots を INSERT
     const capturedAt = new Date().toISOString();
 
@@ -53,18 +57,16 @@ export async function GET(request: NextRequest) {
         captured_at: capturedAt,
       }))
       .filter((row) => row.viewers > 0);
-
-    const { error: snapError } = await supabase
-      .from("snapshots")
-      .insert(snapshotRows);
-
-    if (snapError) {
-      console.error(snapError);
-      return NextResponse.json(
-        { step: "snapshots", error: snapError.message },
-        { status: 500 },
-      );
-    }
+await db.batch(
+  snapshotRows.map((s) => ({
+    sql: `
+      INSERT INTO snapshots (game_id, viewers, captured_at)
+      VALUES (?,?,?)
+    `,
+    args: [s.game_id, s.viewers, s.captured_at],
+  })),
+  "write",
+);
 
     return NextResponse.json({
       games: gameRows.length,
