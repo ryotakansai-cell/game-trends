@@ -141,6 +141,45 @@ export type YouTubeLiveRankingRow = {
   channel_title: string;
 };
 
+/** チャンネルIDから、アイコン画像のURLをまとめて取得する（表示時にその場で取得。TwitchのgetUsersByLoginと同じ考え方） */
+export async function getChannelIcons(
+  channelIds: string[],
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  const uniqueIds = [...new Set(channelIds)];
+  if (uniqueIds.length === 0) return map;
+
+  const apiKey = getApiKey();
+
+  // channels.listも一度に指定できるIDが50件までなので分割する
+  const chunks: string[][] = [];
+  for (let i = 0; i < uniqueIds.length; i += 50) {
+    chunks.push(uniqueIds.slice(i, i + 50));
+  }
+
+  await Promise.all(
+    chunks.map(async (chunk) => {
+      const params = new URLSearchParams({
+        part: "snippet",
+        id: chunk.join(","),
+        key: apiKey,
+      });
+      const res = await fetch(`${YOUTUBE_API}/channels?${params}`);
+      const json = await res.json();
+      if (json.error) return;
+
+      for (const item of json.items ?? []) {
+        const url =
+          item.snippet?.thumbnails?.default?.url ??
+          item.snippet?.thumbnails?.medium?.url;
+        if (url) map.set(item.id, url);
+      }
+    }),
+  );
+
+  return map;
+}
+
 /** DBに貯めた直近の収集結果から、ランキングを読み出す */
 export async function getTopYouTubeLive(
   region?: "jp" | "global",

@@ -7,7 +7,11 @@ import {
   elapsedSince,
   formatViewers,
 } from "@/lib/twitch";
-import { getTopYouTubeLive, youtubeThumbnail } from "@/lib/youtube";
+import {
+  getTopYouTubeLive,
+  youtubeThumbnail,
+  getChannelIcons,
+} from "@/lib/youtube";
 
 export const revalidate = 180;
 
@@ -60,7 +64,10 @@ export default async function Home({ searchParams }: Props) {
       : Promise.resolve([]),
   ]);
 
-  const users = await getUsersByLogin(twitchStreams.map((s) => s.user_login));
+  const [users, youtubeIcons] = await Promise.all([
+    getUsersByLogin(twitchStreams.map((s) => s.user_login)),
+    getChannelIcons(youtubeVideos.map((v) => v.channel_id)),
+  ]);
 
   const twitchEntries: UnifiedEntry[] = twitchStreams.map((s) => ({
     key: `twitch-${s.id}`,
@@ -85,6 +92,8 @@ export default async function Home({ searchParams }: Props) {
     thumbnailUrl: youtubeThumbnail(v.video_id),
     watchHref: `https://www.youtube.com/watch?v=${v.video_id}`,
     channelName: v.channel_title,
+    channelHref: `https://www.youtube.com/channel/${v.channel_id}`,
+    channelIconUrl: youtubeIcons.get(v.channel_id),
   }));
 
   const entries = [...twitchEntries, ...youtubeEntries]
@@ -97,11 +106,9 @@ export default async function Home({ searchParams }: Props) {
     <main className="mx-auto max-w-6xl px-6 py-12">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-4xl font-bold text-purple-400">
-            配信者ランキング
-          </h1>
+          <h1 className="text-4xl font-bold text-purple-400">Live Trend</h1>
           <p className="mt-2 text-sm text-gray-400">
-            いま配信中 ・ 上位{entries.length}配信で
+            Live中 ・ 上位{entries.length}配信で
             <span className="font-bold text-purple-300">
               {formatViewers(totalViewers)}人
             </span>
@@ -150,7 +157,7 @@ export default async function Home({ searchParams }: Props) {
               : "bg-white/5 text-gray-400 hover:bg-white/10"
           }`}
         >
-          日本語
+          日本
         </Link>
         <Link
           href={buildHref(selectedPlatform, false)}
@@ -168,13 +175,12 @@ export default async function Home({ searchParams }: Props) {
         {entries.map((entry, index) => (
           <li key={entry.key} className="group">
             <a href={entry.watchHref} target="_blank" rel="noopener noreferrer">
-              <div className="relative overflow-hidden rounded-lg border border-white/10">
+              <div className="relative aspect-video overflow-hidden rounded-lg border border-white/10">
                 <Image
                   src={entry.thumbnailUrl}
                   alt={entry.title}
-                  width={440}
-                  height={248}
-                  className="w-full transition duration-300 group-hover:scale-105"
+                  fill
+                  className="object-cover transition duration-300 group-hover:scale-105"
                   unoptimized
                 />
                 <span className="absolute left-2 top-2 rounded bg-black/70 px-2 py-0.5 text-xs font-bold text-white">
@@ -206,21 +212,41 @@ export default async function Home({ searchParams }: Props) {
 
             <div className="mt-2 flex items-center gap-2 text-sm">
               {entry.channelHref ? (
-                <Link
-                  href={entry.channelHref}
-                  className="flex shrink-0 items-center gap-2 text-gray-300 hover:text-purple-300"
-                >
-                  {entry.channelIconUrl && (
-                    <Image
-                      src={entry.channelIconUrl}
-                      alt={entry.channelName}
-                      width={28}
-                      height={28}
-                      className="rounded-full ring-1 ring-white/10"
-                    />
-                  )}
-                  <span className="truncate">{entry.channelName}</span>
-                </Link>
+                entry.channelHref.startsWith("http") ? (
+                  <a
+                    href={entry.channelHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex shrink-0 items-center gap-2 text-gray-300 hover:text-purple-300"
+                  >
+                    {entry.channelIconUrl && (
+                      <Image
+                        src={entry.channelIconUrl}
+                        alt={entry.channelName}
+                        width={28}
+                        height={28}
+                        className="rounded-full ring-1 ring-white/10"
+                      />
+                    )}
+                    <span className="truncate">{entry.channelName}</span>
+                  </a>
+                ) : (
+                  <Link
+                    href={entry.channelHref}
+                    className="flex shrink-0 items-center gap-2 text-gray-300 hover:text-purple-300"
+                  >
+                    {entry.channelIconUrl && (
+                      <Image
+                        src={entry.channelIconUrl}
+                        alt={entry.channelName}
+                        width={28}
+                        height={28}
+                        className="rounded-full ring-1 ring-white/10"
+                      />
+                    )}
+                    <span className="truncate">{entry.channelName}</span>
+                  </Link>
+                )
               ) : (
                 <span className="truncate text-gray-300">
                   {entry.channelName}
