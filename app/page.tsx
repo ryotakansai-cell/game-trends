@@ -124,8 +124,8 @@ export default async function Home({ searchParams }: Props) {
         </Link>
       </div>
 
-      {/* プラットフォーム切替タブ */}
-      <div className="mt-6 flex gap-2">
+      {/* プラットフォーム切替（セグメント型） */}
+      <div className="mt-6 inline-flex gap-1 rounded-lg bg-white/5 p-1">
         {(
           [
             ["all", "統合"],
@@ -136,10 +136,10 @@ export default async function Home({ searchParams }: Props) {
           <Link
             key={value}
             href={buildHref(value, isJapanese)}
-            className={`rounded-full px-4 py-1.5 text-sm transition ${
+            className={`rounded-md px-3.5 py-1.5 text-sm transition ${
               selectedPlatform === value
                 ? "bg-purple-500 text-white"
-                : "bg-white/5 text-gray-400 hover:bg-white/10"
+                : "text-gray-400 hover:text-gray-200"
             }`}
           >
             {label}
@@ -147,27 +147,27 @@ export default async function Home({ searchParams }: Props) {
         ))}
       </div>
 
-      {/* 言語切替タブ */}
-      <div className="mt-2 flex gap-2">
+      {/* 言語切替（セグメント型） */}
+      <div className="mt-2 inline-flex gap-1 rounded-lg bg-white/5 p-1">
         <Link
           href={buildHref(selectedPlatform, true)}
-          className={`rounded-full px-4 py-1.5 text-sm transition ${
+          className={`rounded-md px-3.5 py-1.5 text-sm transition ${
             isJapanese
               ? "bg-purple-500 text-white"
-              : "bg-white/5 text-gray-400 hover:bg-white/10"
+              : "text-gray-400 hover:text-gray-200"
           }`}
         >
           日本
         </Link>
         <Link
           href={buildHref(selectedPlatform, false)}
-          className={`rounded-full px-4 py-1.5 text-sm transition ${
+          className={`rounded-md px-3.5 py-1.5 text-sm transition ${
             !isJapanese
               ? "bg-purple-500 text-white"
-              : "bg-white/5 text-gray-400 hover:bg-white/10"
+              : "text-gray-400 hover:text-gray-200"
           }`}
         >
-          全世界
+          世界
         </Link>
       </div>
 
