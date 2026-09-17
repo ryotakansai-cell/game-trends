@@ -7,11 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "test:cron": "node --env-file=.env.local scripts/test-cron.mjs"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",
-    "@supabase/supabase-js": "^2.115.0",
     "next": "16.3.3",
     "react": "19.2.8",
     "react-dom": "19.2.8"
