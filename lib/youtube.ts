@@ -1,3 +1,5 @@
+import { getDbClient } from "@/lib/db";
+
 const YOUTUBE_API = "https://www.googleapis.com/youtube/v3";
 
 function getApiKey() {
@@ -123,4 +125,40 @@ export const GLOBAL_LIVE_KEYWORDS = [
 /** 時刻（0-23）に応じてキーワードを1つ選ぶ（順番に一周する） */
 export function pickKeyword(keywords: string[], hour: number) {
   return keywords[hour % keywords.length];
+}
+
+/** 動画IDからサムネイル画像のURLを組み立てる（保存不要、その場で作れる） */
+export function youtubeThumbnail(videoId: string) {
+  return `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+}
+
+export type YouTubeLiveRankingRow = {
+  video_id: string;
+  title: string;
+  viewers: number;
+  region: "jp" | "global";
+  channel_id: string;
+  channel_title: string;
+};
+
+/** DBに貯めた直近の収集結果から、ランキングを読み出す */
+export async function getTopYouTubeLive(
+  region?: "jp" | "global",
+  limit = 40,
+): Promise<YouTubeLiveRankingRow[]> {
+  const db = getDbClient();
+
+  const sql = `
+    SELECT s.video_id, s.title, s.viewers, s.region, s.channel_id, c.title AS channel_title
+    FROM youtube_live_snapshots s
+    JOIN youtube_streamers c ON s.channel_id = c.channel_id
+    WHERE s.captured_at = (SELECT MAX(captured_at) FROM youtube_live_snapshots)
+      ${region ? "AND s.region = ?" : ""}
+    ORDER BY s.viewers DESC
+    LIMIT ?
+  `;
+  const args = region ? [region, limit] : [limit];
+
+  const result = await db.execute({ sql, args });
+  return result.rows as unknown as YouTubeLiveRankingRow[];
 }
