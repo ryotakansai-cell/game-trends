@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 import {
   getTopGames,
   getViewerCountByGame,
@@ -23,14 +24,33 @@ export default async function Home() {
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-12">
-      <h1 className="text-4xl font-bold text-purple-400">ゲームトレンド</h1>
-      <p className="mt-2 text-sm text-gray-400">
-        Twitchでいま視聴者が多い順 ・ 上位{games.length}タイトルで
-        <span className="font-bold text-purple-300">
-          {formatViewers(total)}人
-        </span>
-        が視聴中
-      </p>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-4xl font-bold text-purple-400">ゲームトレンド</h1>
+          <p className="mt-2 text-sm text-gray-400">
+            Twitchでいま視聴者が多い順 ・ 上位{games.length}タイトルで
+            <span className="font-bold text-purple-300">
+              {formatViewers(total)}人
+            </span>
+            が視聴中
+          </p>
+        </div>
+
+        <div className="flex gap-4">
+          <Link
+            href="/"
+            className="text-sm text-gray-500 hover:text-purple-400"
+          >
+            配信ランキング →
+          </Link>
+          <Link
+            href="/youtube"
+            className="text-sm text-gray-500 hover:text-purple-400"
+          >
+            YouTube Liveランキング →
+          </Link>
+        </div>
+      </div>
 
       <ul className="mt-10 grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-6">
         {games.map((game, index) => {

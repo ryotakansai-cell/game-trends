@@ -33,9 +33,20 @@ export default async function YouTubePage({ searchParams }: Props) {
           </p>
         </div>
 
-        <Link href="/" className="text-sm text-gray-500 hover:text-purple-400">
-          Twitchランキング →
-        </Link>
+        <div className="flex gap-4">
+          <Link
+            href="/"
+            className="text-sm text-gray-500 hover:text-purple-400"
+          >
+            配信ランキング →
+          </Link>
+          <Link
+            href="/games"
+            className="text-sm text-gray-500 hover:text-purple-400"
+          >
+            ゲームランキング →
+          </Link>
+        </div>
       </div>
 
       {/* 日本語/全世界切替タブ */}
