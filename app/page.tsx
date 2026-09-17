@@ -40,12 +40,20 @@ export default async function Home({ searchParams }: Props) {
           </p>
         </div>
 
-        <Link
-          href="/games"
-          className="text-sm text-gray-500 hover:text-purple-400"
-        >
-          ゲームランキング →
-        </Link>
+        <div className="flex gap-4">
+          <Link
+            href="/games"
+            className="text-sm text-gray-500 hover:text-purple-400"
+          >
+            ゲームランキング →
+          </Link>
+          <Link
+            href="/youtube"
+            className="text-sm text-gray-500 hover:text-purple-400"
+          >
+            YouTube Liveランキング →
+          </Link>
+        </div>
       </div>
 
       {/* 言語切替タブ */}
