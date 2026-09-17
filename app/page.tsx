@@ -106,9 +106,9 @@ export default async function Home({ searchParams }: Props) {
     <main className="mx-auto max-w-6xl px-6 py-12">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-4xl font-bold text-purple-400">Live Trend</h1>
+          <h1 className="text-4xl font-bold text-purple-400">Live Ranking</h1>
           <p className="mt-2 text-sm text-gray-400">
-            Live中 ・ 上位{entries.length}配信で
+            配信中 ・ 上位{entries.length}配信で
             <span className="font-bold text-purple-300">
               {formatViewers(totalViewers)}人
             </span>
@@ -124,51 +124,52 @@ export default async function Home({ searchParams }: Props) {
         </Link>
       </div>
 
-      {/* プラットフォーム切替（セグメント型） */}
-      <div className="mt-6 inline-flex gap-1 rounded-lg bg-white/5 p-1">
-        {(
-          [
-            ["all", "統合"],
-            ["twitch", "Twitch"],
-            ["youtube", "YouTube"],
-          ] as const
-        ).map(([value, label]) => (
+      {/* プラットフォーム/言語切替（セグメント型、必ず縦に2段） */}
+      <div className="mt-6 flex flex-col gap-2">
+        <div className="inline-flex w-fit gap-1 rounded-lg bg-white/5 p-1">
+          {(
+            [
+              ["all", "All"],
+              ["twitch", "Twitch"],
+              ["youtube", "YouTube"],
+            ] as const
+          ).map(([value, label]) => (
+            <Link
+              key={value}
+              href={buildHref(value, isJapanese)}
+              className={`rounded-md px-3.5 py-1.5 text-sm transition ${
+                selectedPlatform === value
+                  ? "bg-purple-500 text-white"
+                  : "text-gray-400 hover:text-gray-200"
+              }`}
+            >
+              {label}
+            </Link>
+          ))}
+        </div>
+
+        <div className="inline-flex w-fit gap-1 rounded-lg bg-white/5 p-1">
           <Link
-            key={value}
-            href={buildHref(value, isJapanese)}
+            href={buildHref(selectedPlatform, true)}
             className={`rounded-md px-3.5 py-1.5 text-sm transition ${
-              selectedPlatform === value
+              isJapanese
                 ? "bg-purple-500 text-white"
                 : "text-gray-400 hover:text-gray-200"
             }`}
           >
-            {label}
+            JP
           </Link>
-        ))}
-      </div>
-
-      {/* 言語切替（セグメント型） */}
-      <div className="mt-2 inline-flex gap-1 rounded-lg bg-white/5 p-1">
-        <Link
-          href={buildHref(selectedPlatform, true)}
-          className={`rounded-md px-3.5 py-1.5 text-sm transition ${
-            isJapanese
-              ? "bg-purple-500 text-white"
-              : "text-gray-400 hover:text-gray-200"
-          }`}
-        >
-          日本
-        </Link>
-        <Link
-          href={buildHref(selectedPlatform, false)}
-          className={`rounded-md px-3.5 py-1.5 text-sm transition ${
-            !isJapanese
-              ? "bg-purple-500 text-white"
-              : "text-gray-400 hover:text-gray-200"
-          }`}
-        >
-          世界
-        </Link>
+          <Link
+            href={buildHref(selectedPlatform, false)}
+            className={`rounded-md px-3.5 py-1.5 text-sm transition ${
+              !isJapanese
+                ? "bg-purple-500 text-white"
+                : "text-gray-400 hover:text-gray-200"
+            }`}
+          >
+            Global
+          </Link>
+        </div>
       </div>
 
       <ul className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
