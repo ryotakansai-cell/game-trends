@@ -31,11 +31,10 @@ Twitch・YouTube Liveの配信ランキングサイト。将来的に他プラ�
 
 ```
 app/
-├── page.tsx                    トップ（配信ランキング / 言語切替）
-├── games/page.tsx              ゲームランキング
+├── page.tsx                    トップ（Live Ranking。Twitch/YouTube統合 + プラットフォーム/地域タブ）
+├── games/page.tsx              ゲームランキング（Twitchのみ。YouTube側にゲーム判定が無いため）
 ├── games/[id]/page.tsx         ゲーム詳細（配信者一覧 + 外部リンク）
 ├── streamers/[login]/page.tsx  配信者ページ（クリップ・アーカイブ）
-├── youtube/page.tsx            YouTube Liveランキング（日本語/全世界）
 └── api/
     ├── twitch/route.ts               動作確認用のJSONエンドポイント
     ├── cron/snapshot/route.ts        Twitch: 毎時DBに保存（games/snapshots、streamers/streamer_snapshots）
@@ -76,8 +75,13 @@ YouTubeは Twitch と仕組みが違う。「今ライブ中の一覧」を取�
 Vercel Hobbyプランのcronは1日1回しか実行できないため。
 
 `page.tsx` から自分のAPIルートをfetchしない。Server Componentなので
-`lib/` の関数を直接呼ぶ。YouTubeランキングページだけは例外的にDBを直接
-読む（Twitchと違い、表示のたびにAPIを叩けないため）。
+`lib/` の関数を直接呼ぶ。トップページはTwitch（API直叩き）とYouTube
+（DB読み取り）の両方を呼び、`UnifiedEntry` という共通の形に変換して
+から視聴者数でソートする（`app/page.tsx`）。YouTube側だけ例外的に
+DBを直接読む（Twitchと違い、表示のたびにAPIを叩けないため）。
+
+配信者アイコンは表示時にその場で取得し、DBには保存しない
+（Twitchの`getUsersByLogin`、YouTubeの`getChannelIcons`とも同じ方針）。
 
 ## 禁止事項
 
