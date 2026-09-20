@@ -2,7 +2,9 @@ name: Twitchスナップショット収集
 
 on:
   schedule:
-    - cron: "0 * * * *"
+    # 毎時23分。「0分」は世界中のジョブが集中してGitHub側で
+    # 遅延・スキップされやすいため、あえて半端な時刻にしている
+    - cron: "23 * * * *"
   workflow_dispatch:
 
 jobs:

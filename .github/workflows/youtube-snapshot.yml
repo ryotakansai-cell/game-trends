@@ -2,7 +2,9 @@ name: YouTube Liveスナップショット収集
 
 on:
   schedule:
-    - cron: "0 * * * *"
+    # 毎時38分。Twitch側(23分)ともずらして、同時に待ち行列へ
+    # 入らないようにしている
+    - cron: "38 * * * *"
   workflow_dispatch:
 
 jobs:
