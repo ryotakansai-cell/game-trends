@@ -1,3 +1,7 @@
+// DBを読むために、lib/db.ts の接続関数を借りてくる。
+// （このファイルで唯一、Twitch APIではなく自前のDBを見る処理のために使う）
+import { getDbClient } from "@/lib/db";
+
 const TOKEN_URL = "https://id.twitch.tv/oauth2/token";
 const HELIX = "https://api.twitch.tv/helix";
 
@@ -315,4 +319,84 @@ export async function getTopStreamsPaged(pages = 8) {
   }
 
   return streams;
+}
+
+// ============================================
+// 急上昇ランキング用（Twitch APIではなく、DBに貯めた履歴を読む）
+// ============================================
+
+// この関数が返す「1行分」の形。
+// SQLの SELECT で並べた列名と、ここのプロパティ名が一致している必要がある。
+export type RisingStreamer = {
+  streamer_id: string;
+  login: string; // URL用の名前。/streamers/faker のリンクに使う
+  display_name: string; // 画面に出す表示名
+  current_viewers: number; // 今の視聴者数
+  past_viewers: number; // 24時間前の視聴者数
+  current_at: string; // 「今」の記録がいつ取られたか
+  past_at: string; // 「24時間前」の記録が実際にいつ取られたか
+  growth_rate: number; // 増加率（0.35 なら 35%増）
+};
+
+/** 24時間前と比べて視聴者数が伸びている配信者を取得する */
+export async function getRisingStreamers(
+  minViewers = 300, // 今の視聴者数がこれ未満なら除外（小規模配信のノイズ対策）
+  limit = 20, // 何件返すか
+): Promise<RisingStreamer[]> {
+  const db = getDbClient();
+
+  const sql = `
+    -- ① 配信者ごとに「一番新しい記録」を特定する
+    WITH latest AS (
+      SELECT
+        streamer_id,
+        viewers AS current_viewers,
+        captured_at AS current_at,
+        -- 配信者ごと(PARTITION BY)に、新しい順(DESC)で 1,2,3... と採番
+        ROW_NUMBER() OVER (
+          PARTITION BY streamer_id
+          ORDER BY captured_at DESC
+        ) AS rn
+      FROM streamer_snapshots
+    ),
+
+    -- ② 配信者ごとに「24時間前に一番近い記録」を特定する
+    past AS (
+      SELECT
+        streamer_id,
+        viewers AS past_viewers,
+        captured_at AS past_at,
+        -- 「24時間前からのズレ（秒）」が小さい順に採番
+        ROW_NUMBER() OVER (
+          PARTITION BY streamer_id
+          ORDER BY ABS(strftime('%s', captured_at) - strftime('%s', 'now', '-24 hours'))
+        ) AS rn
+      FROM streamer_snapshots
+    )
+
+    -- ③ ①と②を突き合わせて、増加率を計算する
+    SELECT
+      s.id AS streamer_id,
+      s.login,
+      s.display_name,
+      l.current_viewers,
+      p.past_viewers,
+      l.current_at,
+      p.past_at,
+      -- CASTしないと整数同士の割り算になり0に切り捨てられる（C#のint/intと同じ）
+      (CAST(l.current_viewers AS REAL) - p.past_viewers) / p.past_viewers AS growth_rate
+    FROM latest l
+    JOIN past p ON p.streamer_id = l.streamer_id AND p.rn = 1
+    JOIN streamers s ON s.id = l.streamer_id
+    WHERE l.rn = 1
+      AND l.current_viewers >= ?
+      AND p.past_viewers > 0
+      -- 10800秒=3時間。24時間前付近のデータが無い配信者は除外
+      AND ABS(strftime('%s', p.past_at) - strftime('%s', 'now', '-24 hours')) < 10800
+    ORDER BY growth_rate DESC
+    LIMIT ?
+  `;
+
+  const result = await db.execute({ sql, args: [minViewers, limit] });
+  return result.rows as unknown as RisingStreamer[];
 }
