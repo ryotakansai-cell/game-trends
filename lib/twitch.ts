@@ -391,8 +391,14 @@ export async function getRisingStreamers(
     WHERE l.rn = 1
       AND l.current_viewers >= ?
       AND p.past_viewers > 0
+      -- 増えている人だけ（急上昇ページなので、減っている人は載せない）
+      AND l.current_viewers > p.past_viewers
       -- 10800秒=3時間。24時間前付近のデータが無い配信者は除外
       AND ABS(strftime('%s', p.past_at) - strftime('%s', 'now', '-24 hours')) < 10800
+      -- 最新の収集バッチに含まれている人だけ（＝最後の観測時点で配信中）。
+      -- 「現在時刻から何時間以内」にするとcronの遅延で全員消えるため、
+      -- cronがいつ動いたかに依存しないこの書き方にしている
+      AND l.current_at = (SELECT MAX(captured_at) FROM streamer_snapshots)
     ORDER BY growth_rate DESC
     LIMIT ?
   `;
