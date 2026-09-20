@@ -201,3 +201,93 @@ export async function getTopYouTubeLive(
   const result = await db.execute({ sql, args });
   return result.rows as unknown as YouTubeLiveRankingRow[];
 }
+
+// ============================================
+// 急上昇ランキング用（DBに貯めた履歴を読む）
+// ============================================
+
+export type RisingYouTubeChannel = {
+  channel_id: string;
+  channel_title: string; // チャンネル名（youtube_streamersから取得）
+  video_id: string; // 今ライブ中の動画ID（サムネとリンクに使う）
+  video_title: string; // 今の配信タイトル
+  region: "jp" | "global"; // どちらの検索で見つかったか
+  current_viewers: number;
+  past_viewers: number;
+  current_at: string;
+  past_at: string;
+  growth_rate: number; // 0.35 なら 35%増
+};
+
+/** 24時間前と比べて視聴者数が伸びているYouTubeチャンネルを取得する */
+export async function getRisingYouTubeLive(
+  minViewers = 100, // Twitch(300)より低め。YouTube側は母数が少ないため
+  limit = 20,
+): Promise<RisingYouTubeChannel[]> {
+  const db = getDbClient();
+
+  const sql = `
+    -- ① チャンネルごとに「一番新しい記録」を特定する
+    WITH latest AS (
+      SELECT
+        channel_id,
+        video_id,
+        title AS video_title,
+        region,
+        viewers AS current_viewers,
+        captured_at AS current_at,
+        -- 同じ時刻に複数の動画を配信している場合は、視聴者が多い方を採用
+        ROW_NUMBER() OVER (
+          PARTITION BY channel_id
+          ORDER BY captured_at DESC, viewers DESC
+        ) AS rn
+      FROM youtube_live_snapshots
+    ),
+
+    -- ② チャンネルごとに「24時間前に一番近い記録」を特定する
+    past AS (
+      SELECT
+        channel_id,
+        viewers AS past_viewers,
+        captured_at AS past_at,
+        ROW_NUMBER() OVER (
+          PARTITION BY channel_id
+          ORDER BY ABS(strftime('%s', captured_at) - strftime('%s', 'now', '-24 hours')), viewers DESC
+        ) AS rn
+      FROM youtube_live_snapshots
+    )
+
+    -- ③ ①と②を突き合わせて増加率を計算する
+    SELECT
+      c.channel_id,
+      c.title AS channel_title,
+      l.video_id,
+      l.video_title,
+      l.region,
+      l.current_viewers,
+      p.past_viewers,
+      l.current_at,
+      p.past_at,
+      (CAST(l.current_viewers AS REAL) - p.past_viewers) / p.past_viewers AS growth_rate
+    FROM latest l
+    JOIN past p ON p.channel_id = l.channel_id AND p.rn = 1
+    JOIN youtube_streamers c ON c.channel_id = l.channel_id
+    WHERE l.rn = 1
+      AND l.current_viewers >= ?
+      AND p.past_viewers > 0
+      -- 増えている人だけ（急上昇ページなので、減っている人は載せない）
+      AND l.current_viewers > p.past_viewers
+      -- 21600秒 = 6時間。YouTubeはキーワードローテーションのため記録が
+      -- 飛び飛びになるので、Twitch(3時間)より広く取る
+      AND ABS(strftime('%s', p.past_at) - strftime('%s', 'now', '-24 hours')) < 21600
+      -- 最新の収集バッチに含まれている人だけ（＝最後の観測時点で配信中）。
+      -- 「現在時刻から何時間以内」にするとcronの遅延で全員消えるため、
+      -- cronがいつ動いたかに依存しないこの書き方にしている
+      AND l.current_at = (SELECT MAX(captured_at) FROM youtube_live_snapshots)
+    ORDER BY growth_rate DESC
+    LIMIT ?
+  `;
+
+  const result = await db.execute({ sql, args: [minViewers, limit] });
+  return result.rows as unknown as RisingYouTubeChannel[];
+}
