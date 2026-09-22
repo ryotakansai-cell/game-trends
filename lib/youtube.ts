@@ -1,4 +1,5 @@
 import { getDbClient } from "@/lib/db";
+import type { PlatformAccount, PlatformContent } from "@/lib/platform";
 
 const YOUTUBE_API = "https://www.googleapis.com/youtube/v3";
 
@@ -318,4 +319,152 @@ export async function getRisingYouTubeLive(
 
   const result = await db.execute({ sql, args });
   return result.rows as unknown as RisingYouTubeChannel[];
+}
+
+// ============================================
+// クリエイターページ用（共通の形に変換して返す）
+// ============================================
+
+export type YouTubeUpload = {
+  videoId: string;
+  title: string;
+  publishedAt: string;
+};
+
+/** チャンネルの最近の投稿を取得する（playlistItems.list = 1ユニット） */
+export async function getRecentUploads(
+  channelId: string,
+  limit = 6,
+): Promise<YouTubeUpload[]> {
+  const apiKey = getApiKey();
+
+  // 「アップロード済み動画」は "UU..." というプレイリストにまとまっている。
+  // チャンネルID "UCxxxx" の先頭2文字を "UU" に変えるだけで求まるので、
+  // channels.list を呼ばずに済む（1ユニット節約）
+  const playlistId = `UU${channelId.slice(2)}`;
+
+  const params = new URLSearchParams({
+    part: "snippet",
+    playlistId,
+    maxResults: String(limit),
+    key: apiKey,
+  });
+
+  const res = await fetch(`${YOUTUBE_API}/playlistItems?${params}`);
+  const json = await res.json();
+
+  // 非公開チャンネルなどで取れないことがある。
+  // その場合はページ全体を落とさず、空の一覧として扱う
+  if (json.error) return [];
+
+  // playlistItems から必要な部分だけを型として書いておく（anyを避けるため）
+  type PlaylistItem = {
+    snippet: {
+      resourceId: { videoId: string };
+      title: string;
+      publishedAt: string;
+    };
+  };
+
+  return (json.items ?? []).map((item: PlaylistItem) => ({
+    videoId: item.snippet.resourceId.videoId,
+    title: item.snippet.title,
+    publishedAt: item.snippet.publishedAt,
+  }));
+}
+
+/** DBに貯めた直近のスナップショットから「今配信中か」を判定する（API消費ゼロ） */
+async function getLiveByAccountIds(accountIds: number[]) {
+  const map = new Map<
+    number,
+    { title: string; viewers: number; contentId: string }
+  >();
+  if (accountIds.length === 0) return map;
+
+  const db = getDbClient();
+  // IN (?, ?, ?) の ? を件数ぶん作る
+  const placeholders = accountIds.map(() => "?").join(",");
+
+  const result = await db.execute({
+    sql: `
+      WITH recent AS (
+        SELECT account_id, title, viewers, content_id, captured_at,
+          ROW_NUMBER() OVER (
+            PARTITION BY account_id ORDER BY captured_at DESC, viewers DESC
+          ) AS rn
+        FROM live_snapshots
+        WHERE account_id IN (${placeholders})
+      )
+      SELECT account_id, title, viewers, content_id
+      FROM recent
+      WHERE rn = 1
+        -- 2時間以上前の記録なら、もう配信は終わっているとみなす
+        AND strftime('%s', 'now') - strftime('%s', captured_at) < 7200
+    `,
+    args: accountIds,
+  });
+
+  for (const r of result.rows) {
+    map.set(Number(r.account_id), {
+      title: String(r.title),
+      viewers: Number(r.viewers),
+      contentId: String(r.content_id),
+    });
+  }
+  return map;
+}
+
+/** YouTubeアカウントの中身を PlatformContent に変換する */
+export async function getYouTubeContent(
+  accounts: PlatformAccount[],
+): Promise<PlatformContent[]> {
+  if (accounts.length === 0) return [];
+
+  const [icons, live] = await Promise.all([
+    // アイコンは50件まで1回で取れる（合計1ユニット）
+    getChannelIcons(accounts.map((a) => a.platform_id)),
+    // 配信中かは自前のDBから読む（0ユニット）
+    getLiveByAccountIds(accounts.map((a) => a.id)),
+  ]);
+
+  // 最近の動画は1チャンネルにつき1ユニットかかる。
+  // 無料枠（1日10,000、うちcronが約7,300使う）を守るため、
+  // 本人を優先して先頭3チャンネルまでに絞る
+  const uploadTargets = new Set(accounts.slice(0, 3).map((a) => a.id));
+
+  return Promise.all(
+    accounts.map(async (account) => {
+      const uploads = uploadTargets.has(account.id)
+        ? await getRecentUploads(account.platform_id, 6).catch(() => [])
+        : [];
+      const liveRow = live.get(account.id);
+
+      return {
+        accountId: account.id,
+        platform: "youtube",
+        label: "YouTube",
+        relation: account.relation,
+        displayName: account.display_name,
+        iconUrl: icons.get(account.platform_id) ?? null,
+        profileUrl: `https://www.youtube.com/channel/${account.platform_id}`,
+        live: liveRow
+          ? {
+              title: liveRow.title,
+              url: `https://www.youtube.com/watch?v=${liveRow.contentId}`,
+              thumbnailUrl: youtubeThumbnail(liveRow.contentId),
+              meta: `${liveRow.viewers.toLocaleString("ja-JP")}人が視聴中`,
+            }
+          : null,
+        // YouTubeには「クリップ」に相当するAPIが無いので常に空
+        clips: [],
+        videos: uploads.map((v) => ({
+          id: v.videoId,
+          title: v.title,
+          url: `https://www.youtube.com/watch?v=${v.videoId}`,
+          thumbnailUrl: youtubeThumbnail(v.videoId),
+          meta: new Date(v.publishedAt).toLocaleDateString("ja-JP"),
+        })),
+      };
+    }),
+  );
 }
