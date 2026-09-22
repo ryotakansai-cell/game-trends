@@ -78,20 +78,22 @@ export async function GET(request: NextRequest) {
       id: s.user_id,
       login: s.user_login,
       display_name: s.user_name,
+      language: s.language, // "ja" や "en"。急上昇ページのJP/Global切替に使う
       updated_at: capturedAt,
     }));
 
     await db.batch(
       streamerRows.map((s) => ({
         sql: `
-          INSERT INTO streamers (id, login, display_name, updated_at)
-          VALUES (?, ?, ?, ?)
+          INSERT INTO streamers (id, login, display_name, language, updated_at)
+          VALUES (?, ?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET
             login = excluded.login,
             display_name = excluded.display_name,
+            language = excluded.language,
             updated_at = excluded.updated_at
         `,
-        args: [s.id, s.login, s.display_name, s.updated_at],
+        args: [s.id, s.login, s.display_name, s.language, s.updated_at],
       })),
       "write",
     );
