@@ -46,30 +46,7 @@ export async function GET(request: NextRequest) {
     const db = getDbClient();
     const capturedAt = new Date().toISOString();
 
-    // ⑥ youtube_streamers を UPSERT
-    const streamerRows = videos.map((v) => ({
-      channel_id: v.channelId,
-      title: v.channelTitle,
-      thumbnail_url: v.thumbnailUrl,
-      updated_at: capturedAt,
-    }));
-
-    await db.batch(
-      streamerRows.map((s) => ({
-        sql: `
-          INSERT INTO youtube_streamers (channel_id, title, thumbnail_url, updated_at)
-          VALUES (?, ?, ?, ?)
-          ON CONFLICT(channel_id) DO UPDATE SET
-            title = excluded.title,
-            thumbnail_url = excluded.thumbnail_url,
-            updated_at = excluded.updated_at
-        `,
-        args: [s.channel_id, s.title, s.thumbnail_url, s.updated_at],
-      })),
-      "write",
-    );
-
-    // ⑦ youtube_live_snapshots を INSERT
+    // ⑥ 配信ごとの記録を組み立てる
     const snapshotRows = videos.map((v) => ({
       channel_id: v.channelId,
       video_id: v.videoId,
@@ -79,26 +56,7 @@ export async function GET(request: NextRequest) {
       captured_at: capturedAt,
     }));
 
-    await db.batch(
-      snapshotRows.map((s) => ({
-        sql: `
-          INSERT INTO youtube_live_snapshots (channel_id, video_id, title, region, viewers, captured_at)
-          VALUES (?, ?, ?, ?, ?, ?)
-        `,
-        args: [
-          s.channel_id,
-          s.video_id,
-          s.title,
-          s.region,
-          s.viewers,
-          s.captured_at,
-        ],
-      })),
-      "write",
-    );
-
-    // ⑧ 【新テーブル】accounts を UPSERT
-    //    プラットフォーム共通テーブルへの移行中のため、旧テーブルと両方に書く
+    // ⑦ accounts を UPSERT（全プラットフォーム共通テーブル）
     await db.batch(
       videos.map((v) => ({
         sql: `
@@ -114,7 +72,7 @@ export async function GET(request: NextRequest) {
       "write",
     );
 
-    // ⑨ 【新テーブル】live_snapshots を INSERT
+    // ⑧ live_snapshots を INSERT
     await db.batch(
       snapshotRows.map((s) => ({
         sql: `
@@ -141,7 +99,7 @@ export async function GET(request: NextRequest) {
       jp_keywords: [jpKeywordA, jpKeywordB],
       global_keyword: globalKeyword,
       found: videos.length,
-      streamers: streamerRows.length,
+      streamers: videos.length,
       captured_at: capturedAt,
     });
   } catch (e) {

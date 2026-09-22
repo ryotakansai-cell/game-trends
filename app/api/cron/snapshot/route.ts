@@ -73,32 +73,7 @@ export async function GET(request: NextRequest) {
       "write",
     );
 
-    // ⑤ streamers を UPSERT
-    const streamerRows = topStreams.map((s) => ({
-      id: s.user_id,
-      login: s.user_login,
-      display_name: s.user_name,
-      language: s.language, // "ja" や "en"。急上昇ページのJP/Global切替に使う
-      updated_at: capturedAt,
-    }));
-
-    await db.batch(
-      streamerRows.map((s) => ({
-        sql: `
-          INSERT INTO streamers (id, login, display_name, language, updated_at)
-          VALUES (?, ?, ?, ?, ?)
-          ON CONFLICT(id) DO UPDATE SET
-            login = excluded.login,
-            display_name = excluded.display_name,
-            language = excluded.language,
-            updated_at = excluded.updated_at
-        `,
-        args: [s.id, s.login, s.display_name, s.language, s.updated_at],
-      })),
-      "write",
-    );
-
-    // ⑥ streamer_snapshots を INSERT
+    // ⑤ 配信者ごとの記録を組み立てる（視聴者0の配信は除外）
     const streamerSnapshotRows = topStreams
       .map((s) => ({
         streamer_id: s.user_id,
@@ -109,19 +84,7 @@ export async function GET(request: NextRequest) {
       }))
       .filter((row) => row.viewers > 0);
 
-    await db.batch(
-      streamerSnapshotRows.map((s) => ({
-        sql: `
-          INSERT INTO streamer_snapshots (streamer_id, viewers, game_id, title, captured_at)
-          VALUES (?, ?, ?, ?, ?)
-        `,
-        args: [s.streamer_id, s.viewers, s.game_id, s.title, s.captured_at],
-      })),
-      "write",
-    );
-
-    // ⑦ 【新テーブル】accounts を UPSERT
-    //    プラットフォーム共通テーブルへの移行中のため、旧テーブルと両方に書く
+    // ⑥ accounts を UPSERT（全プラットフォーム共通テーブル）
     await db.batch(
       topStreams.map((s) => ({
         sql: `
@@ -138,14 +101,15 @@ export async function GET(request: NextRequest) {
       "write",
     );
 
-    // ⑧ 【新テーブル】live_snapshots を INSERT
+    // ⑦ live_snapshots を INSERT
     await db.batch(
       streamerSnapshotRows.map((s) => ({
         sql: `
           INSERT INTO live_snapshots (account_id, viewers, title, game_id, captured_at)
           VALUES (
-            -- 旧テーブルはTwitchのIDを直接持つが、新テーブルは内部IDを持つ。
-            -- ここで「TwitchのID → 内部ID」の変換をDB側にやらせている
+            -- 新テーブルは内部ID(accounts.id)で管理しているので、
+            -- 「TwitchのID → 内部ID」の変換をDB側にやらせている。
+            -- ⑥で先にaccountsを更新済みなので必ず見つかる
             (SELECT id FROM accounts WHERE platform = 'twitch' AND platform_id = ?),
             ?, ?, ?, ?
           )
@@ -158,7 +122,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       games: gameRows.length,
       snapshots: snapshotRows.length,
-      streamers: streamerRows.length,
+      streamers: topStreams.length,
       streamer_snapshots: streamerSnapshotRows.length,
       captured_at: capturedAt,
     });

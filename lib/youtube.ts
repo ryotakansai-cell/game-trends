@@ -223,7 +223,7 @@ export async function getTopYouTubeLive(
 
 export type RisingYouTubeChannel = {
   channel_id: string;
-  channel_title: string; // チャンネル名（youtube_streamersから取得）
+  channel_title: string; // チャンネル名（accounts.display_nameから取得）
   video_id: string; // 今ライブ中の動画ID（サムネとリンクに使う）
   video_title: string; // 今の配信タイトル
   region: "jp" | "global"; // どちらの検索で見つかったか
