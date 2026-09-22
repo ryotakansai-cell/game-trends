@@ -120,6 +120,41 @@ export async function GET(request: NextRequest) {
       "write",
     );
 
+    // ⑦ 【新テーブル】accounts を UPSERT
+    //    プラットフォーム共通テーブルへの移行中のため、旧テーブルと両方に書く
+    await db.batch(
+      topStreams.map((s) => ({
+        sql: `
+          INSERT INTO accounts (platform, platform_id, login, display_name, language, updated_at)
+          VALUES ('twitch', ?, ?, ?, ?, ?)
+          ON CONFLICT(platform, platform_id) DO UPDATE SET
+            login = excluded.login,
+            display_name = excluded.display_name,
+            language = excluded.language,
+            updated_at = excluded.updated_at
+        `,
+        args: [s.user_id, s.user_login, s.user_name, s.language, capturedAt],
+      })),
+      "write",
+    );
+
+    // ⑧ 【新テーブル】live_snapshots を INSERT
+    await db.batch(
+      streamerSnapshotRows.map((s) => ({
+        sql: `
+          INSERT INTO live_snapshots (account_id, viewers, title, game_id, captured_at)
+          VALUES (
+            -- 旧テーブルはTwitchのIDを直接持つが、新テーブルは内部IDを持つ。
+            -- ここで「TwitchのID → 内部ID」の変換をDB側にやらせている
+            (SELECT id FROM accounts WHERE platform = 'twitch' AND platform_id = ?),
+            ?, ?, ?, ?
+          )
+        `,
+        args: [s.streamer_id, s.viewers, s.title, s.game_id, s.captured_at],
+      })),
+      "write",
+    );
+
     return NextResponse.json({
       games: gameRows.length,
       snapshots: snapshotRows.length,
