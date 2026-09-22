@@ -221,7 +221,7 @@ export type RisingYouTubeChannel = {
 
 /** 24時間前と比べて視聴者数が伸びているYouTubeチャンネルを取得する */
 export async function getRisingYouTubeLive(
-  minViewers = 100, // Twitch(300)より低め。YouTube側は母数が少ないため
+  minViewers = 50, // YouTubeは11人規模から収集できているので広めに拾う
   limit = 20,
 ): Promise<RisingYouTubeChannel[]> {
   const db = getDbClient();
