@@ -8,7 +8,10 @@
     "start": "next start",
     "lint": "eslint",
     "format": "prettier --write .",
-    "test:cron": "node --env-file=.env.local scripts/test-cron.mjs"
+    "test:cron": "node --env-file=.env.local scripts/test-cron.mjs",
+    "suggest-links": "node --env-file=.env.local scripts/suggest-links.mjs",
+    "links:review": "node --env-file=.env.local scripts/links-review.mjs",
+    "links:confirm": "node --env-file=.env.local scripts/links-confirm.mjs"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",
