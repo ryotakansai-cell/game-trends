@@ -361,40 +361,50 @@ export async function getRisingStreamers(
   const db = getDbClient();
 
   const sql = `
+    -- ⓪ live_snapshots は全プラットフォーム混在なので、まずTwitch分だけに絞る。
+    --    これを下の3箇所から使い回す（同じJOINを何度も書かないため）
+    WITH twitch_snapshots AS (
+      SELECT l.*
+      FROM live_snapshots l
+      JOIN accounts a ON a.id = l.account_id
+      WHERE a.platform = 'twitch'
+    ),
+
     -- ① 配信者ごとに「一番新しい記録」を特定する
-    WITH latest AS (
+    latest AS (
       SELECT
-        streamer_id,
+        account_id,
         viewers AS current_viewers,
         title,
         captured_at AS current_at,
         -- 配信者ごと(PARTITION BY)に、新しい順(DESC)で 1,2,3... と採番
         ROW_NUMBER() OVER (
-          PARTITION BY streamer_id
+          PARTITION BY account_id
           ORDER BY captured_at DESC
         ) AS rn
-      FROM streamer_snapshots
+      FROM twitch_snapshots
     ),
 
     -- ② 配信者ごとに「24時間前に一番近い記録」を特定する
     past AS (
       SELECT
-        streamer_id,
+        account_id,
         viewers AS past_viewers,
         captured_at AS past_at,
         -- 「24時間前からのズレ（秒）」が小さい順に採番
         ROW_NUMBER() OVER (
-          PARTITION BY streamer_id
+          PARTITION BY account_id
           ORDER BY ABS(strftime('%s', captured_at) - strftime('%s', 'now', '-24 hours'))
         ) AS rn
-      FROM streamer_snapshots
+      FROM twitch_snapshots
     )
 
     -- ③ ①と②を突き合わせて、増加率を計算する
     SELECT
-      s.id AS streamer_id,
-      s.login,
-      s.display_name,
+      -- 列名は移行前と同じにする。呼び出し側（trending/page.tsx）は変更不要
+      a.platform_id AS streamer_id,
+      a.login,
+      a.display_name,
       l.title,
       l.current_viewers,
       p.past_viewers,
@@ -403,8 +413,8 @@ export async function getRisingStreamers(
       -- CASTしないと整数同士の割り算になり0に切り捨てられる（C#のint/intと同じ）
       (CAST(l.current_viewers AS REAL) - p.past_viewers) / p.past_viewers AS growth_rate
     FROM latest l
-    JOIN past p ON p.streamer_id = l.streamer_id AND p.rn = 1
-    JOIN streamers s ON s.id = l.streamer_id
+    JOIN past p ON p.account_id = l.account_id AND p.rn = 1
+    JOIN accounts a ON a.id = l.account_id
     WHERE l.rn = 1
       AND l.current_viewers >= ?
       AND p.past_viewers > 0
@@ -413,10 +423,10 @@ export async function getRisingStreamers(
       -- 10800秒=3時間。24時間前付近のデータが無い配信者は除外
       AND ABS(strftime('%s', p.past_at) - strftime('%s', 'now', '-24 hours')) < 10800
       -- 最新の収集バッチに含まれている人だけ（＝最後の観測時点で配信中）。
-      -- 「現在時刻から何時間以内」にするとcronの遅延で全員消えるため、
-      -- cronがいつ動いたかに依存しないこの書き方にしている
-      AND l.current_at = (SELECT MAX(captured_at) FROM streamer_snapshots)
-      ${language ? "AND s.language = ?" : ""}
+      -- ★live_snapshotsは全プラットフォーム混在なので、MAXもTwitch分だけで取る。
+      --   全体のMAXにすると、YouTubeのcronが後に走った時にTwitch側が0件になる
+      AND l.current_at = (SELECT MAX(captured_at) FROM twitch_snapshots)
+      ${language ? "AND a.language = ?" : ""}
     ORDER BY growth_rate DESC
     LIMIT ?
   `;
