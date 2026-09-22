@@ -5,6 +5,7 @@
 //   npm run links:confirm -- 5:clip 6:archive 切り抜き・アーカイブとして紐付け
 //   npm run links:confirm -- 9:reject         別人なので却下（以後表示されない）
 import { createClient } from "@libsql/client";
+import { linkAccount, printSummary } from "./link-core.mjs";
 
 const db = createClient({
   url: process.env.TURSO_DATABASE_URL,
@@ -22,7 +23,6 @@ if (tokens.length === 0) {
 
 // accounts.relation に入れてよい値。reject だけは紐付けずに却下する特別扱い
 const RELATIONS = new Set(["self", "clip", "archive", "reject"]);
-const now = new Date().toISOString();
 
 for (const token of tokens) {
   // "5:clip" → ["5", "clip"] に分解。関係を省いたら self（本人）扱い
@@ -61,37 +61,18 @@ for (const token of tokens) {
     continue;
   }
 
-  // ③ 元アカウントにまだ creator（人物）が無ければ、ここで1人作る
-  let creatorId = row.creator_id;
-  if (!creatorId) {
-    const inserted = await db.execute({
-      sql: `INSERT INTO creators (display_name, created_at) VALUES (?, ?)`,
-      args: [row.from_name, now],
-    });
-    // libSQL は rowid を BigInt で返すので数値に直す
-    creatorId = Number(inserted.lastInsertRowid);
-
-    await db.execute({
-      sql: `UPDATE accounts SET creator_id = ? WHERE id = ?`,
-      args: [creatorId, row.account_id],
-    });
+  // ③④ creatorの作成と accounts への登録は共通部品に任せる
+  const { creatorId, created } = await linkAccount(db, {
+    sourceAccountId: Number(row.account_id),
+    sourceName: row.from_name,
+    platform: row.platform,
+    platformId: row.platform_id,
+    title: row.title,
+    relation,
+  });
+  if (created) {
     console.log(`creator作成: ${row.from_name} (creator_id=${creatorId})`);
   }
-
-  // ④ 候補側のチャンネルを accounts に登録する。
-  //    cronが既に収集済みなら display_name はそちらが新しいので上書きしない
-  await db.execute({
-    sql: `
-      INSERT INTO accounts
-        (platform, platform_id, login, display_name, creator_id, relation, updated_at)
-      VALUES (?, ?, NULL, ?, ?, ?, ?)
-      ON CONFLICT(platform, platform_id) DO UPDATE SET
-        creator_id = excluded.creator_id,
-        relation   = excluded.relation,
-        updated_at = excluded.updated_at
-    `,
-    args: [row.platform, row.platform_id, row.title, creatorId, relation, now],
-  });
 
   // ⑤ 候補を確定済みにする
   await db.execute({
@@ -103,14 +84,4 @@ for (const token of tokens) {
 }
 
 // 最後に今の状態をまとめて出す
-const summary = await db.execute(`
-  SELECT c.display_name, COUNT(a.id) AS n
-  FROM creators c
-  JOIN accounts a ON a.creator_id = c.id
-  GROUP BY c.id
-  ORDER BY c.id
-`);
-console.log("\n---- 現在の名寄せ状況 ----");
-for (const s of summary.rows) {
-  console.log(`${s.display_name}: ${s.n}アカウント`);
-}
+await printSummary(db);

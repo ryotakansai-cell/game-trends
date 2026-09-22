@@ -11,7 +11,9 @@
     "test:cron": "node --env-file=.env.local scripts/test-cron.mjs",
     "suggest-links": "node --env-file=.env.local scripts/suggest-links.mjs",
     "links:review": "node --env-file=.env.local scripts/links-review.mjs",
-    "links:confirm": "node --env-file=.env.local scripts/links-confirm.mjs"
+    "links:confirm": "node --env-file=.env.local scripts/links-confirm.mjs",
+    "links:add": "node --env-file=.env.local scripts/links-add.mjs",
+    "links:rename": "node --env-file=.env.local scripts/links-rename.mjs"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",
