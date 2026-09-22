@@ -102,6 +102,7 @@ export async function GET(request: NextRequest) {
         streamer_id: s.user_id,
         viewers: s.viewer_count,
         game_id: s.game_id || null,
+        title: s.title, // 配信タイトル（急上昇ページで表示するため保存する）
         captured_at: capturedAt,
       }))
       .filter((row) => row.viewers > 0);
@@ -109,10 +110,10 @@ export async function GET(request: NextRequest) {
     await db.batch(
       streamerSnapshotRows.map((s) => ({
         sql: `
-          INSERT INTO streamer_snapshots (streamer_id, viewers, game_id, captured_at)
-          VALUES (?, ?, ?, ?)
+          INSERT INTO streamer_snapshots (streamer_id, viewers, game_id, title, captured_at)
+          VALUES (?, ?, ?, ?, ?)
         `,
-        args: [s.streamer_id, s.viewers, s.game_id, s.captured_at],
+        args: [s.streamer_id, s.viewers, s.game_id, s.title, s.captured_at],
       })),
       "write",
     );

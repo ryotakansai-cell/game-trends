@@ -176,6 +176,19 @@ export function streamThumb(url: string, width = 440, height = 248) {
     .replace("{height}", String(height));
 }
 
+/**
+ * ログイン名から配信サムネイルのURLを組み立てる。
+ * TwitchのCDNは live_user_{login}-{幅}x{高さ}.jpg という規則なので、
+ * APIに問い合わせなくてもURLが分かる（DBに保存する必要もない）。
+ */
+export function twitchThumbnailFromLogin(
+  login: string,
+  width = 440,
+  height = 248,
+) {
+  return `https://static-cdn.jtvnw.net/previews-ttv/live_user_${login}-${width}x${height}.jpg`;
+}
+
 /** 配信開始からの経過時間を「3時間20分」の形にする */
 export function elapsedSince(startedAt: string) {
   const diffMs = Date.now() - new Date(startedAt).getTime();
@@ -331,6 +344,7 @@ export type RisingStreamer = {
   streamer_id: string;
   login: string; // URL用の名前。/streamers/faker のリンクに使う
   display_name: string; // 画面に出す表示名
+  title: string | null; // 配信タイトル。列を追加する前の古い行はnullになる
   current_viewers: number; // 今の視聴者数
   past_viewers: number; // 24時間前の視聴者数
   current_at: string; // 「今」の記録がいつ取られたか
@@ -340,7 +354,7 @@ export type RisingStreamer = {
 
 /** 24時間前と比べて視聴者数が伸びている配信者を取得する */
 export async function getRisingStreamers(
-  minViewers = 300, // 今の視聴者数がこれ未満なら除外（小規模配信のノイズ対策）
+  minViewers = 200, // 収集自体が上位800配信（＝200人以上）なので実質すべてが対象
   limit = 20, // 何件返すか
 ): Promise<RisingStreamer[]> {
   const db = getDbClient();
@@ -351,6 +365,7 @@ export async function getRisingStreamers(
       SELECT
         streamer_id,
         viewers AS current_viewers,
+        title,
         captured_at AS current_at,
         -- 配信者ごと(PARTITION BY)に、新しい順(DESC)で 1,2,3... と採番
         ROW_NUMBER() OVER (
@@ -379,6 +394,7 @@ export async function getRisingStreamers(
       s.id AS streamer_id,
       s.login,
       s.display_name,
+      l.title,
       l.current_viewers,
       p.past_viewers,
       l.current_at,
