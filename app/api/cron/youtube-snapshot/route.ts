@@ -97,6 +97,46 @@ export async function GET(request: NextRequest) {
       "write",
     );
 
+    // ⑧ 【新テーブル】accounts を UPSERT
+    //    プラットフォーム共通テーブルへの移行中のため、旧テーブルと両方に書く
+    await db.batch(
+      videos.map((v) => ({
+        sql: `
+          INSERT INTO accounts (platform, platform_id, login, display_name, updated_at)
+          VALUES ('youtube', ?, NULL, ?, ?)
+          ON CONFLICT(platform, platform_id) DO UPDATE SET
+            display_name = excluded.display_name,
+            updated_at = excluded.updated_at
+        `,
+        // YouTubeにはlogin相当が無いのでNULL、languageも取得していない
+        args: [v.channelId, v.channelTitle, capturedAt],
+      })),
+      "write",
+    );
+
+    // ⑨ 【新テーブル】live_snapshots を INSERT
+    await db.batch(
+      snapshotRows.map((s) => ({
+        sql: `
+          INSERT INTO live_snapshots (account_id, viewers, title, content_id, region, captured_at)
+          VALUES (
+            (SELECT id FROM accounts WHERE platform = 'youtube' AND platform_id = ?),
+            ?, ?, ?, ?, ?
+          )
+        `,
+        // content_id にYouTubeのvideo_idが入る（Twitchでは使わない列）
+        args: [
+          s.channel_id,
+          s.viewers,
+          s.title,
+          s.video_id,
+          s.region,
+          s.captured_at,
+        ],
+      })),
+      "write",
+    );
+
     return NextResponse.json({
       jp_keywords: [jpKeywordA, jpKeywordB],
       global_keyword: globalKeyword,
