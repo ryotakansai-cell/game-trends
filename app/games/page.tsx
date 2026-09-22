@@ -36,9 +36,20 @@ export default async function Home() {
           </p>
         </div>
 
-        <Link href="/" className="text-sm text-gray-500 hover:text-purple-400">
-          配信者ランキング →
-        </Link>
+        <div className="flex gap-4">
+          <Link
+            href="/"
+            className="text-sm text-gray-500 hover:text-purple-400"
+          >
+            Live Ranking →
+          </Link>
+          <Link
+            href="/trending"
+            className="text-sm text-gray-500 hover:text-purple-400"
+          >
+            Trending →
+          </Link>
+        </div>
       </div>
 
       <ul className="mt-10 grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-6">
