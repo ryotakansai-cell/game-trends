@@ -188,10 +188,25 @@ export async function getTopYouTubeLive(
   const db = getDbClient();
 
   const sql = `
-    SELECT s.video_id, s.title, s.viewers, s.region, s.channel_id, c.title AS channel_title
-    FROM youtube_live_snapshots s
-    JOIN youtube_streamers c ON s.channel_id = c.channel_id
-    WHERE s.captured_at = (SELECT MAX(captured_at) FROM youtube_live_snapshots)
+    -- live_snapshots は全プラットフォーム混在なので、YouTube分だけに絞る
+    WITH yt AS (
+      SELECT l.*
+      FROM live_snapshots l
+      JOIN accounts a ON a.id = l.account_id
+      WHERE a.platform = 'youtube'
+    )
+    -- 列名は移行前と同じにする（呼び出し側は変更不要）
+    SELECT
+      s.content_id AS video_id,
+      s.title,
+      s.viewers,
+      s.region,
+      a.platform_id AS channel_id,
+      a.display_name AS channel_title
+    FROM yt s
+    JOIN accounts a ON a.id = s.account_id
+    -- 「最新バッチ」の判定もYouTube分だけで行う
+    WHERE s.captured_at = (SELECT MAX(captured_at) FROM yt)
       ${region ? "AND s.region = ?" : ""}
     ORDER BY s.viewers DESC
     LIMIT ?
@@ -228,41 +243,50 @@ export async function getRisingYouTubeLive(
   const db = getDbClient();
 
   const sql = `
+    -- ⓪ live_snapshots は全プラットフォーム混在なので、YouTube分だけに絞る
+    WITH yt AS (
+      SELECT l.*
+      FROM live_snapshots l
+      JOIN accounts a ON a.id = l.account_id
+      WHERE a.platform = 'youtube'
+    ),
+
     -- ① チャンネルごとに「一番新しい記録」を特定する
-    WITH latest AS (
+    latest AS (
       SELECT
-        channel_id,
-        video_id,
+        account_id,
+        content_id,
         title AS video_title,
         region,
         viewers AS current_viewers,
         captured_at AS current_at,
         -- 同じ時刻に複数の動画を配信している場合は、視聴者が多い方を採用
         ROW_NUMBER() OVER (
-          PARTITION BY channel_id
+          PARTITION BY account_id
           ORDER BY captured_at DESC, viewers DESC
         ) AS rn
-      FROM youtube_live_snapshots
+      FROM yt
     ),
 
     -- ② チャンネルごとに「24時間前に一番近い記録」を特定する
     past AS (
       SELECT
-        channel_id,
+        account_id,
         viewers AS past_viewers,
         captured_at AS past_at,
         ROW_NUMBER() OVER (
-          PARTITION BY channel_id
+          PARTITION BY account_id
           ORDER BY ABS(strftime('%s', captured_at) - strftime('%s', 'now', '-24 hours')), viewers DESC
         ) AS rn
-      FROM youtube_live_snapshots
+      FROM yt
     )
 
     -- ③ ①と②を突き合わせて増加率を計算する
     SELECT
-      c.channel_id,
-      c.title AS channel_title,
-      l.video_id,
+      -- 列名は移行前と同じにする（呼び出し側は変更不要）
+      a.platform_id AS channel_id,
+      a.display_name AS channel_title,
+      l.content_id AS video_id,
       l.video_title,
       l.region,
       l.current_viewers,
@@ -271,8 +295,8 @@ export async function getRisingYouTubeLive(
       p.past_at,
       (CAST(l.current_viewers AS REAL) - p.past_viewers) / p.past_viewers AS growth_rate
     FROM latest l
-    JOIN past p ON p.channel_id = l.channel_id AND p.rn = 1
-    JOIN youtube_streamers c ON c.channel_id = l.channel_id
+    JOIN past p ON p.account_id = l.account_id AND p.rn = 1
+    JOIN accounts a ON a.id = l.account_id
     WHERE l.rn = 1
       AND l.current_viewers >= ?
       AND p.past_viewers > 0
@@ -282,9 +306,8 @@ export async function getRisingYouTubeLive(
       -- 飛び飛びになるので、Twitch(3時間)より広く取る
       AND ABS(strftime('%s', p.past_at) - strftime('%s', 'now', '-24 hours')) < 21600
       -- 最新の収集バッチに含まれている人だけ（＝最後の観測時点で配信中）。
-      -- 「現在時刻から何時間以内」にするとcronの遅延で全員消えるため、
-      -- cronがいつ動いたかに依存しないこの書き方にしている
-      AND l.current_at = (SELECT MAX(captured_at) FROM youtube_live_snapshots)
+      -- ★MAXもYouTube分だけで取る（全体のMAXだとTwitchのcron後に0件になる）
+      AND l.current_at = (SELECT MAX(captured_at) FROM yt)
       ${region ? "AND l.region = ?" : ""}
     ORDER BY growth_rate DESC
     LIMIT ?
