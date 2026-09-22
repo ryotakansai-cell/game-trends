@@ -356,6 +356,7 @@ export type RisingStreamer = {
 export async function getRisingStreamers(
   minViewers = 200, // 収集自体が上位800配信（＝200人以上）なので実質すべてが対象
   limit = 20, // 何件返すか
+  language?: string, // "ja"を渡すと日本語配信だけ。省略すると全言語
 ): Promise<RisingStreamer[]> {
   const db = getDbClient();
 
@@ -415,10 +416,14 @@ export async function getRisingStreamers(
       -- 「現在時刻から何時間以内」にするとcronの遅延で全員消えるため、
       -- cronがいつ動いたかに依存しないこの書き方にしている
       AND l.current_at = (SELECT MAX(captured_at) FROM streamer_snapshots)
+      ${language ? "AND s.language = ?" : ""}
     ORDER BY growth_rate DESC
     LIMIT ?
   `;
 
-  const result = await db.execute({ sql, args: [minViewers, limit] });
+  // ?の数に合わせて渡す値を変える。順番はSQL内の ? の出現順と一致させる
+  const args = language ? [minViewers, language, limit] : [minViewers, limit];
+
+  const result = await db.execute({ sql, args });
   return result.rows as unknown as RisingStreamer[];
 }

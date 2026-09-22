@@ -223,6 +223,7 @@ export type RisingYouTubeChannel = {
 export async function getRisingYouTubeLive(
   minViewers = 50, // YouTubeは11人規模から収集できているので広めに拾う
   limit = 20,
+  region?: "jp" | "global", // "jp"を渡すと日本向け検索で見つけた配信だけ
 ): Promise<RisingYouTubeChannel[]> {
   const db = getDbClient();
 
@@ -284,10 +285,14 @@ export async function getRisingYouTubeLive(
       -- 「現在時刻から何時間以内」にするとcronの遅延で全員消えるため、
       -- cronがいつ動いたかに依存しないこの書き方にしている
       AND l.current_at = (SELECT MAX(captured_at) FROM youtube_live_snapshots)
+      ${region ? "AND l.region = ?" : ""}
     ORDER BY growth_rate DESC
     LIMIT ?
   `;
 
-  const result = await db.execute({ sql, args: [minViewers, limit] });
+  // ?の数に合わせて渡す値を変える。順番はSQL内の ? の出現順と一致させる
+  const args = region ? [minViewers, region, limit] : [minViewers, limit];
+
+  const result = await db.execute({ sql, args });
   return result.rows as unknown as RisingYouTubeChannel[];
 }

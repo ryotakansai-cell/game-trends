@@ -12,6 +12,7 @@ import {
   youtubeThumbnail,
   getChannelIcons,
 } from "@/lib/youtube";
+import { SegmentedTabs } from "@/components/SegmentedTabs";
 
 export const revalidate = 180;
 
@@ -132,52 +133,41 @@ export default async function Home({ searchParams }: Props) {
         </div>
       </div>
 
-      {/* プラットフォーム/言語切替（セグメント型、必ず縦に2段） */}
+      {/* プラットフォーム/言語切替（共通部品を使用。必ず縦に2段） */}
       <div className="mt-6 flex flex-col gap-2">
-        <div className="inline-flex w-fit gap-1 rounded-lg bg-white/5 p-1">
-          {(
-            [
-              ["all", "All"],
-              ["twitch", "Twitch"],
-              ["youtube", "YouTube"],
-            ] as const
-          ).map(([value, label]) => (
-            <Link
-              key={value}
-              href={buildHref(value, isJapanese)}
-              className={`rounded-md px-3.5 py-1.5 text-sm transition ${
-                selectedPlatform === value
-                  ? "bg-purple-500 text-white"
-                  : "text-gray-400 hover:text-gray-200"
-              }`}
-            >
-              {label}
-            </Link>
-          ))}
-        </div>
-
-        <div className="inline-flex w-fit gap-1 rounded-lg bg-white/5 p-1">
-          <Link
-            href={buildHref(selectedPlatform, true)}
-            className={`rounded-md px-3.5 py-1.5 text-sm transition ${
-              isJapanese
-                ? "bg-purple-500 text-white"
-                : "text-gray-400 hover:text-gray-200"
-            }`}
-          >
-            JP
-          </Link>
-          <Link
-            href={buildHref(selectedPlatform, false)}
-            className={`rounded-md px-3.5 py-1.5 text-sm transition ${
-              !isJapanese
-                ? "bg-purple-500 text-white"
-                : "text-gray-400 hover:text-gray-200"
-            }`}
-          >
-            Global
-          </Link>
-        </div>
+        <SegmentedTabs
+          options={[
+            {
+              label: "All",
+              href: buildHref("all", isJapanese),
+              active: selectedPlatform === "all",
+            },
+            {
+              label: "Twitch",
+              href: buildHref("twitch", isJapanese),
+              active: selectedPlatform === "twitch",
+            },
+            {
+              label: "YouTube",
+              href: buildHref("youtube", isJapanese),
+              active: selectedPlatform === "youtube",
+            },
+          ]}
+        />
+        <SegmentedTabs
+          options={[
+            {
+              label: "JP",
+              href: buildHref(selectedPlatform, true),
+              active: isJapanese,
+            },
+            {
+              label: "Global",
+              href: buildHref(selectedPlatform, false),
+              active: !isJapanese,
+            },
+          ]}
+        />
       </div>
 
       <ul className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
