@@ -12,6 +12,7 @@ import {
   youtubeThumbnail,
   getChannelIcons,
 } from "@/lib/youtube";
+import { getCreatorIdMap } from "@/lib/creators";
 import { SegmentedTabs } from "@/components/SegmentedTabs";
 
 export const revalidate = 180;
@@ -36,6 +37,7 @@ type UnifiedEntry = {
   gameName?: string;
   gameHref?: string;
   elapsed?: string;
+  isCreator?: boolean; // 名寄せ済み＝統合ページへ飛ぶ
 };
 
 /** 選んだタブを維持したまま、リンク先のURLを組み立てる */
@@ -65,37 +67,62 @@ export default async function Home({ searchParams }: Props) {
       : Promise.resolve([]),
   ]);
 
-  const [users, youtubeIcons] = await Promise.all([
+  const [users, youtubeIcons, creatorIds] = await Promise.all([
     getUsersByLogin(twitchStreams.map((s) => s.user_login)),
     getChannelIcons(youtubeVideos.map((v) => v.channel_id)),
+    // 名寄せ済みかどうかを1回のDB問い合わせでまとめて調べる
+    getCreatorIdMap([
+      ...twitchStreams.map((s) => ({
+        platform: "twitch",
+        platformId: s.user_id,
+      })),
+      ...youtubeVideos.map((v) => ({
+        platform: "youtube",
+        platformId: v.channel_id,
+      })),
+    ]),
   ]);
 
-  const twitchEntries: UnifiedEntry[] = twitchStreams.map((s) => ({
-    key: `twitch-${s.id}`,
-    platform: "twitch",
-    title: s.title,
-    viewers: s.viewer_count,
-    thumbnailUrl: streamThumb(s.thumbnail_url),
-    watchHref: `https://twitch.tv/${s.user_login}`,
-    channelName: s.user_name,
-    channelHref: `/streamers/${s.user_login}`,
-    channelIconUrl: users.get(s.user_login)?.profile_image_url,
-    gameName: s.game_name || undefined,
-    gameHref: s.game_id ? `/games/${s.game_id}` : undefined,
-    elapsed: elapsedSince(s.started_at),
-  }));
+  const twitchEntries: UnifiedEntry[] = twitchStreams.map((s) => {
+    // 名寄せ済みなら統合ページへ、まだならこれまでどおりTwitch配信者ページへ
+    const creatorId = creatorIds.get(`twitch:${s.user_id}`);
+    return {
+      key: `twitch-${s.id}`,
+      platform: "twitch",
+      title: s.title,
+      viewers: s.viewer_count,
+      thumbnailUrl: streamThumb(s.thumbnail_url),
+      watchHref: `https://twitch.tv/${s.user_login}`,
+      channelName: s.user_name,
+      channelHref: creatorId
+        ? `/creators/${creatorId}`
+        : `/streamers/${s.user_login}`,
+      isCreator: creatorId !== undefined,
+      channelIconUrl: users.get(s.user_login)?.profile_image_url,
+      gameName: s.game_name || undefined,
+      gameHref: s.game_id ? `/games/${s.game_id}` : undefined,
+      elapsed: elapsedSince(s.started_at),
+    };
+  });
 
-  const youtubeEntries: UnifiedEntry[] = youtubeVideos.map((v) => ({
-    key: `youtube-${v.video_id}`,
-    platform: "youtube",
-    title: v.title,
-    viewers: v.viewers,
-    thumbnailUrl: youtubeThumbnail(v.video_id),
-    watchHref: `https://www.youtube.com/watch?v=${v.video_id}`,
-    channelName: v.channel_title,
-    channelHref: `https://www.youtube.com/channel/${v.channel_id}`,
-    channelIconUrl: youtubeIcons.get(v.channel_id),
-  }));
+  const youtubeEntries: UnifiedEntry[] = youtubeVideos.map((v) => {
+    const creatorId = creatorIds.get(`youtube:${v.channel_id}`);
+    return {
+      key: `youtube-${v.video_id}`,
+      platform: "youtube",
+      title: v.title,
+      viewers: v.viewers,
+      thumbnailUrl: youtubeThumbnail(v.video_id),
+      watchHref: `https://www.youtube.com/watch?v=${v.video_id}`,
+      channelName: v.channel_title,
+      // 名寄せ済みなら内部の統合ページ、そうでなければ従来どおり外部リンク
+      channelHref: creatorId
+        ? `/creators/${creatorId}`
+        : `https://www.youtube.com/channel/${v.channel_id}`,
+      isCreator: creatorId !== undefined,
+      channelIconUrl: youtubeIcons.get(v.channel_id),
+    };
+  });
 
   const entries = [...twitchEntries, ...youtubeEntries]
     .sort((a, b) => b.viewers - a.viewers)
@@ -118,6 +145,12 @@ export default async function Home({ searchParams }: Props) {
         </div>
 
         <div className="flex gap-4">
+          <Link
+            href="/creators"
+            className="text-sm text-gray-500 hover:text-purple-400"
+          >
+            Creators →
+          </Link>
           <Link
             href="/trending"
             className="text-sm text-gray-500 hover:text-purple-400"
@@ -224,7 +257,11 @@ export default async function Home({ searchParams }: Props) {
                         alt={entry.channelName}
                         width={28}
                         height={28}
-                        className="rounded-full ring-1 ring-white/10"
+                        className={`rounded-full ring-1 ${
+                          entry.isCreator
+                            ? "ring-purple-400/70"
+                            : "ring-white/10"
+                        }`}
                       />
                     )}
                     <span className="truncate">{entry.channelName}</span>
@@ -240,7 +277,11 @@ export default async function Home({ searchParams }: Props) {
                         alt={entry.channelName}
                         width={28}
                         height={28}
-                        className="rounded-full ring-1 ring-white/10"
+                        className={`rounded-full ring-1 ${
+                          entry.isCreator
+                            ? "ring-purple-400/70"
+                            : "ring-white/10"
+                        }`}
                       />
                     )}
                     <span className="truncate">{entry.channelName}</span>

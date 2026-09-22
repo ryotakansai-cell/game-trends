@@ -11,6 +11,7 @@ import {
   getChannelIcons,
   youtubeThumbnail,
 } from "@/lib/youtube";
+import { getCreatorIdMap } from "@/lib/creators";
 import { SegmentedTabs } from "@/components/SegmentedTabs";
 
 // 5分間キャッシュする。cronが数時間おきなので、これ以上短くしても意味がない
@@ -34,6 +35,7 @@ type RisingEntry = {
   currentViewers: number;
   pastViewers: number;
   growthRate: number; // 0.35 なら 35%増
+  creatorHref?: string; // 名寄せ済みなら統合ページへのリンク
 };
 
 export default async function TrendingPage({ searchParams }: Props) {
@@ -48,10 +50,27 @@ export default async function TrendingPage({ searchParams }: Props) {
   ]);
 
   // アイコンは表示時にその場で取得する（DBには保存しない方針）
-  const [twitchIcons, youtubeIcons] = await Promise.all([
+  const [twitchIcons, youtubeIcons, creatorIds] = await Promise.all([
     getUsersByLogin(twitchRising.map((s) => s.login)),
     getChannelIcons(youtubeRising.map((v) => v.channel_id)),
+    // 名寄せ済みの配信者は、アイコンから統合ページへ飛ばす
+    getCreatorIdMap([
+      ...twitchRising.map((s) => ({
+        platform: "twitch",
+        platformId: s.streamer_id,
+      })),
+      ...youtubeRising.map((v) => ({
+        platform: "youtube",
+        platformId: v.channel_id,
+      })),
+    ]),
   ]);
+
+  // creator_id が見つかったときだけリンク先を作る小さな関数
+  const creatorHref = (platform: string, platformId: string) => {
+    const id = creatorIds.get(`${platform}:${platformId}`);
+    return id ? `/creators/${id}` : undefined;
+  };
 
   // Twitchの結果を共通の形に変換
   const twitchEntries: RisingEntry[] = twitchRising.map((s) => ({
@@ -67,6 +86,7 @@ export default async function TrendingPage({ searchParams }: Props) {
     currentViewers: s.current_viewers,
     pastViewers: s.past_viewers,
     growthRate: s.growth_rate,
+    creatorHref: creatorHref("twitch", s.streamer_id),
   }));
 
   // YouTubeの結果も同じ形に変換
@@ -81,6 +101,7 @@ export default async function TrendingPage({ searchParams }: Props) {
     currentViewers: v.current_viewers,
     pastViewers: v.past_viewers,
     growthRate: v.growth_rate,
+    creatorHref: creatorHref("youtube", v.channel_id),
   }));
 
   // 2つを混ぜて、増加率が高い順に並べ直す
@@ -163,16 +184,38 @@ export default async function TrendingPage({ searchParams }: Props) {
             </p>
 
             <div className="mt-2 flex items-center gap-2 text-sm text-gray-400">
-              {entry.channelIconUrl && (
-                <Image
-                  src={entry.channelIconUrl}
-                  alt={entry.channelName}
-                  width={24}
-                  height={24}
-                  className="shrink-0 rounded-full ring-1 ring-white/10"
-                />
+              {/* 名寄せ済みなら統合ページへのリンクにする。
+                  上のサムネの <a> は既に閉じているので入れ子にはならない */}
+              {entry.creatorHref ? (
+                <Link
+                  href={entry.creatorHref}
+                  className="flex min-w-0 items-center gap-2 transition hover:text-purple-300"
+                >
+                  {entry.channelIconUrl && (
+                    <Image
+                      src={entry.channelIconUrl}
+                      alt={entry.channelName}
+                      width={24}
+                      height={24}
+                      className="shrink-0 rounded-full ring-1 ring-purple-400/70"
+                    />
+                  )}
+                  <span className="truncate">{entry.channelName}</span>
+                </Link>
+              ) : (
+                <>
+                  {entry.channelIconUrl && (
+                    <Image
+                      src={entry.channelIconUrl}
+                      alt={entry.channelName}
+                      width={24}
+                      height={24}
+                      className="shrink-0 rounded-full ring-1 ring-white/10"
+                    />
+                  )}
+                  <span className="truncate">{entry.channelName}</span>
+                </>
               )}
-              <span className="truncate">{entry.channelName}</span>
             </div>
 
             {/* 「1068人 → 3091人」という変化そのものを見せる */}
