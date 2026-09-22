@@ -70,3 +70,78 @@ export async function getCreatorContents(
       .filter((c): c is PlatformContent => c !== undefined)
   );
 }
+
+export type CreatorSummary = {
+  id: number;
+  displayName: string;
+  accountCount: number;
+  platforms: string[];
+  twitchLogin: string | null; // アイコン取得用
+};
+
+/** 一覧ページ用。人物と、その集計をまとめて1回で取る */
+export async function getCreators(limit = 100): Promise<CreatorSummary[]> {
+  const db = getDbClient();
+  const result = await db.execute({
+    sql: `
+      SELECT
+        c.id,
+        c.display_name,
+        COUNT(a.id) AS account_count,
+        -- 持っているプラットフォームを "twitch,youtube" という1つの文字列にまとめる
+        GROUP_CONCAT(DISTINCT a.platform) AS platforms,
+        -- アイコン取得に使う「Twitch本人アカウントのログイン名」を1つだけ拾う。
+        -- MAX(CASE ...) は「グループの中から条件に合う値を1つ取り出す」定番の書き方。
+        -- 条件に合わない行は NULL になり、MAX は NULL を無視するので残った1件が取れる
+        MAX(CASE WHEN a.platform = 'twitch' AND a.relation = 'self'
+                 THEN a.login END) AS twitch_login
+      FROM creators c
+      JOIN accounts a ON a.creator_id = c.id
+      GROUP BY c.id
+      ORDER BY account_count DESC, c.id
+      LIMIT ?
+    `,
+    args: [limit],
+  });
+
+  return result.rows.map((r) => ({
+    id: Number(r.id),
+    displayName: String(r.display_name),
+    accountCount: Number(r.account_count),
+    // "twitch,youtube" を配列に戻す。空文字のときに [""] にならないよう filter する
+    platforms: String(r.platforms ?? "")
+      .split(",")
+      .filter(Boolean),
+    twitchLogin: r.twitch_login ? String(r.twitch_login) : null,
+  }));
+}
+
+/** ランキングのアイコンの飛び先を決めるための対応表。
+ *  "twitch:123456" や "youtube:UCxxxx" を鍵に creator_id を引ける Map を返す。
+ *  名寄せしていない配信者は入らないので、呼び出し側で従来のリンクに切り替える */
+export async function getCreatorIdMap(
+  keys: { platform: string; platformId: string }[],
+): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  if (keys.length === 0) return map;
+
+  const db = getDbClient();
+  // 同じIDが重複して届くことがあるので Set で一意にする
+  const ids = [...new Set(keys.map((k) => k.platformId))];
+  const placeholders = ids.map(() => "?").join(",");
+
+  const result = await db.execute({
+    sql: `
+      SELECT platform, platform_id, creator_id
+      FROM accounts
+      WHERE creator_id IS NOT NULL
+        AND platform_id IN (${placeholders})
+    `,
+    args: ids,
+  });
+
+  for (const r of result.rows) {
+    map.set(`${r.platform}:${r.platform_id}`, Number(r.creator_id));
+  }
+  return map;
+}
