@@ -1,6 +1,7 @@
 // DBを読むために、lib/db.ts の接続関数を借りてくる。
 // （このファイルで唯一、Twitch APIではなく自前のDBを見る処理のために使う）
 import { getDbClient } from "@/lib/db";
+import type { PlatformAccount, PlatformContent } from "@/lib/platform";
 
 const TOKEN_URL = "https://id.twitch.tv/oauth2/token";
 const HELIX = "https://api.twitch.tv/helix";
@@ -436,4 +437,62 @@ export async function getRisingStreamers(
 
   const result = await db.execute({ sql, args });
   return result.rows as unknown as RisingStreamer[];
+}
+
+// ============================================
+// クリエイターページ用（共通の形に変換して返す）
+// ============================================
+
+/** Twitchアカウントの中身を PlatformContent に変換する */
+export async function getTwitchContent(
+  accounts: PlatformAccount[],
+): Promise<PlatformContent[]> {
+  return Promise.all(
+    accounts.map(async (account) => {
+      const login = account.login ?? "";
+
+      // クリップとアーカイブの取得には user.id が要るので、先にユーザー情報を取る
+      const user = await getUserByLogin(login).catch(() => null);
+
+      // 残り3つは互いに独立しているので並列で取る
+      const [stream, clips, videos] = await Promise.all([
+        getStreamByLogin(login).catch(() => null),
+        user ? getClipsByBroadcaster(user.id, 7, 8).catch(() => []) : [],
+        user ? getVideosByUser(user.id, 6).catch(() => []) : [],
+      ]);
+
+      return {
+        accountId: account.id,
+        platform: "twitch",
+        label: "Twitch",
+        relation: account.relation,
+        // APIが取れたらそちらを優先、ダメならDBに入っている名前を使う
+        displayName: user?.display_name ?? account.display_name,
+        iconUrl: user?.profile_image_url ?? null,
+        profileUrl: `https://twitch.tv/${login}`,
+        live: stream
+          ? {
+              title: stream.title,
+              url: `https://twitch.tv/${login}`,
+              thumbnailUrl: streamThumb(stream.thumbnail_url),
+              meta: `${formatViewers(stream.viewer_count)}人が視聴中 ・ ${elapsedSince(stream.started_at)}経過`,
+            }
+          : null,
+        clips: clips.map((c) => ({
+          id: c.id,
+          title: c.title,
+          url: c.url,
+          thumbnailUrl: c.thumbnail_url,
+          meta: `${c.view_count.toLocaleString("ja-JP")}回再生 ・ ${formatDate(c.created_at)}`,
+        })),
+        videos: videos.map((v) => ({
+          id: v.id,
+          title: v.title,
+          url: v.url,
+          thumbnailUrl: videoThumb(v.thumbnail_url),
+          meta: `${v.view_count.toLocaleString("ja-JP")}回視聴 ・ ${v.duration}`,
+        })),
+      };
+    }),
+  );
 }
