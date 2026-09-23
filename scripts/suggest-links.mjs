@@ -42,7 +42,12 @@ const targets = await db.execute({
       AND a.language = 'ja'
       AND a.creator_id IS NULL
       AND NOT EXISTS (
-        SELECT 1 FROM link_candidates c WHERE c.account_id = a.id
+        -- 「検索済み」の人だけスキップする。
+        -- probe(source=handle)の結果があっても検索は妨げない。
+        -- probeが外れたチャンネルを拾った人まで検索対象から
+        -- 外れてしまうのを防ぐため
+        SELECT 1 FROM link_candidates c
+        WHERE c.account_id = a.id AND c.source = name_search
       )
     ORDER BY t.viewers DESC
     LIMIT ?
