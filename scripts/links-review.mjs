@@ -79,6 +79,7 @@ const rows = await db.execute(`
     c.platform,
     c.platform_id,
     c.title,
+    c.source,
     a.display_name AS from_name,
     a.login        AS from_login,
     EXISTS (
@@ -174,6 +175,13 @@ function judge(row) {
     return { mark: "×", relation: "reject", reasons, subscribers };
   }
 
+  // --- 登録者が極端に少ないチャンネルは、本人のものでも中身が無い。
+  //     紐付けてもページに空のセクションが増えるだけなので却下を提案する ---
+  if (subscribers !== null && subscribers < 100) {
+    reasons.push(`登録者${subscribers}人。実質空のチャンネル`);
+    return { mark: "×", relation: "reject", reasons, subscribers };
+  }
+
   // --- 関係（self/clip/archive）を決める。強い根拠から順に見る ---
   let relation;
   let relationReason;
@@ -200,11 +208,18 @@ function judge(row) {
     relationReason = "切り抜き系の語なし";
   }
 
-  if (linkedToSource) {
-    // 説明欄に元配信者のTwitchが書いてある＝関係は確実。
+  // links:probe が見つけた候補（source=handle）は、
+  // 「@<Twitchのlogin> というハンドルを取れている」という事実そのものが強い根拠。
+  // そのハンドルは本人しか取得できないため、名前が全く違っていても
+  // （例: @stylishnoob4 → 関優太）本人とみなしてよい
+  const fromHandle = row.source === "handle";
+
+  if (linkedToSource || fromHandle) {
+    // 説明欄に元配信者のTwitchが書いてある場合も関係は確実。
     // ただし切り抜きチャンネルも元配信者のリンクを貼るので、
     // 本人かどうかは上のキーワード判定に任せる
-    reasons.push(`説明欄に twitch.tv/${srcLogin}`);
+    if (fromHandle) reasons.push(`ハンドル @${srcLogin} を取得している`);
+    if (linkedToSource) reasons.push(`説明欄に twitch.tv/${srcLogin}`);
     reasons.push(relationReason);
     return { mark: "◎", relation, reasons, subscribers };
   }

@@ -12,6 +12,7 @@
     "suggest-links": "node --env-file=.env.local scripts/suggest-links.mjs",
     "links:review": "node --env-file=.env.local scripts/links-review.mjs",
     "links:confirm": "node --env-file=.env.local scripts/links-confirm.mjs",
+    "links:probe": "node --env-file=.env.local scripts/links-probe.mjs",
     "links:add": "node --env-file=.env.local scripts/links-add.mjs",
     "links:rename": "node --env-file=.env.local scripts/links-rename.mjs"
   },
