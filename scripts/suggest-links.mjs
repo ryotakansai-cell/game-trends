@@ -47,7 +47,7 @@ const targets = await db.execute({
         -- probeが外れたチャンネルを拾った人まで検索対象から
         -- 外れてしまうのを防ぐため
         SELECT 1 FROM link_candidates c
-        WHERE c.account_id = a.id AND c.source = name_search
+        WHERE c.account_id = a.id AND c.source = 'name_search'
       )
     ORDER BY t.viewers DESC
     LIMIT ?
