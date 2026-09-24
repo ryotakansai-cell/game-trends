@@ -42,3 +42,5 @@ next-env.d.ts
 
 # AI export
 *_sourcecode.txt
+# 作業用の一時スクリプト
+_*.mjs
