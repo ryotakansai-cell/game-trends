@@ -138,7 +138,6 @@ function judge(row) {
   const title = ch?.title ?? String(row.title);
   const description = ch?.description ?? "";
   const subscribers = ch?.subscribers ?? null;
-  const haystack = `${title}\n${description.slice(0, 400)}`;
 
   // --- 信号A/B: 説明欄に書かれたTwitchのURL ---
   const logins = [...description.matchAll(/twitch\.tv\/([A-Za-z0-9_]+)/gi)].map(
