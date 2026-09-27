@@ -14,12 +14,26 @@ export type PlatformAccount = {
   relation: string; // self=本人 / clip=切り抜き / archive=アーカイブ
 };
 
-/** 一覧に並べる1件ぶん（クリップでも動画でも同じ形にする） */
+/** 一覧に並べる1件ぶん（クリップでも動画でも同じ形にする）。
+ *  チャンネルごとに分けず1本のリストに混ぜて並び替えるので、
+ *  「どこから来た何なのか」と「並び替えの材料」を各件が持つ必要がある */
 export type ContentItem = {
   id: string;
   title: string;
   url: string;
   thumbnailUrl: string;
+
+  // --- どこから来たか（カードのバッジに出す） ---
+  platform: string; // "twitch" | "youtube"
+  platformLabel: string; // "Twitch" | "YouTube"
+  relation: string; // self / clip / archive
+  kindLabel: string; // "クリップ" / "アーカイブ" / "動画"
+  channelName: string; // 由来のアカウント名
+
+  // --- 並び替えの材料 ---
+  publishedAt: string; // ISO8601。最近順と期間の絞り込みに使う
+  viewCount: number; // 人気順に使う
+
   meta: string; // 「12,345回再生 ・ 2026/09/20」など、整形済みの説明1行
 };
 
@@ -41,8 +55,7 @@ export type PlatformContent = {
   iconUrl: string | null;
   profileUrl: string; // そのアカウントへの外部リンク
   live: LiveInfo | null; // 配信していなければ null
-  clips: ContentItem[];
-  videos: ContentItem[];
+  items: ContentItem[]; // クリップ・動画・アーカイブを区別せず1本に
 };
 
 /** relation を画面用の日本語にする */
