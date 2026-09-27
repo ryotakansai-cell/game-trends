@@ -17,6 +17,11 @@ import { SegmentedTabs } from "@/components/SegmentedTabs";
 
 export const revalidate = 180;
 
+// トップページは layout の default タイトルを使うので title は指定しない
+export const metadata = {
+  alternates: { canonical: "/" },
+};
+
 type Props = {
   searchParams: Promise<{ lang?: string; platform?: string }>;
 };

@@ -1,3 +1,5 @@
+import { cache } from "react";
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -16,6 +18,32 @@ type Props = {
   // Next.js 16 では params は Promise なので await して取り出す
   params: Promise<{ id: string }>;
 };
+
+// generateMetadata と本体の両方で creator が必要になる。
+// cache() で包むと、同じリクエスト内の同じ引数の呼び出しが1回にまとめられる
+// （DBへの問い合わせが2回走るのを防ぐ）
+const loadCreator = cache((id: number) => getCreator(id));
+
+// ページごとの <title> と説明文。これが無いと全ページ同じタイトルになり、
+// 検索結果で区別がつかない
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { id } = await params;
+  const creatorId = Number(id);
+  if (!Number.isInteger(creatorId)) return { title: "見つかりません" };
+
+  const creator = await loadCreator(creatorId);
+  if (!creator) return { title: "見つかりません" };
+
+  const title = `${creator.display_name}の配信まとめ`;
+  const description = `${creator.display_name}のTwitch・YouTubeのアカウントをまとめて表示。配信中かどうか、人気クリップ、最近の動画がわかります。`;
+
+  return {
+    title,
+    description,
+    alternates: { canonical: `/creators/${creatorId}` },
+    openGraph: { title, description, url: `/creators/${creatorId}` },
+  };
+}
 
 /** 動画・クリップの一覧。中身が無ければ何も描かない */
 function ItemGrid({ title, items }: { title: string; items: ContentItem[] }) {
@@ -56,7 +84,7 @@ export default async function CreatorPage({ params }: Props) {
   // "/creators/abc" のような数字でないURLは404にする
   if (!Number.isInteger(creatorId)) notFound();
 
-  const creator = await getCreator(creatorId);
+  const creator = await loadCreator(creatorId);
   if (!creator) notFound();
 
   const accounts = await getCreatorAccounts(creatorId);

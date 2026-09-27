@@ -7,6 +7,14 @@ import {
   isRealGame,
   formatViewers,
 } from "@/lib/twitch";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "ゲーム別ランキング",
+  description:
+    "Twitchでいま視聴者数が多いゲームのランキング。ゲームを選ぶと、そのゲームを配信している配信者が一覧で見られます。",
+  alternates: { canonical: "/games" },
+};
 
 export const revalidate = 300;
 
@@ -58,32 +66,36 @@ export default async function Home() {
 
           return (
             <li key={game.id} className="group">
-              <div className="relative overflow-hidden rounded-lg border border-white/10">
-                <Image
-                  src={boxArt(game.box_art_url)}
-                  alt={game.name}
-                  width={285}
-                  height={380}
-                  className="w-full transition duration-300 group-hover:scale-105"
-                />
-                <span className="absolute left-2 top-2 rounded bg-black/70 px-2 py-0.5 text-xs font-bold text-white">
-                  {index + 1}
-                </span>
-              </div>
+              {/* カード全体をリンクにする。/games/[id] は前から存在していたが
+                  ここが <Link> になっておらず、たどり着けなかった */}
+              <Link href={`/games/${game.id}`}>
+                <div className="relative overflow-hidden rounded-lg border border-white/10 transition group-hover:border-purple-400/50">
+                  <Image
+                    src={boxArt(game.box_art_url)}
+                    alt={game.name}
+                    width={285}
+                    height={380}
+                    className="w-full transition duration-300 group-hover:scale-105"
+                  />
+                  <span className="absolute left-2 top-2 rounded bg-black/70 px-2 py-0.5 text-xs font-bold text-white">
+                    {index + 1}
+                  </span>
+                </div>
 
-              <p
-                className="mt-2 truncate text-sm text-gray-300"
-                title={game.name}
-              >
-                {game.name}
-              </p>
-
-              {viewers > 0 && (
-                <p className="flex items-center gap-1.5 text-xs text-gray-500">
-                  <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
-                  {formatViewers(viewers)}人
+                <p
+                  className="mt-2 truncate text-sm text-gray-300 group-hover:text-purple-300"
+                  title={game.name}
+                >
+                  {game.name}
                 </p>
-              )}
+
+                {viewers > 0 && (
+                  <p className="flex items-center gap-1.5 text-xs text-gray-500">
+                    <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                    {formatViewers(viewers)}人
+                  </p>
+                )}
+              </Link>
             </li>
           );
         })}

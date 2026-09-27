@@ -1,3 +1,5 @@
+import { cache } from "react";
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -16,11 +18,31 @@ type Props = {
   params: Promise<{ id: string }>;
 };
 
+// generateMetadata と本体で同じゲーム情報が必要なので、
+// cache() で1リクエスト内の呼び出しを1回にまとめる
+const loadGame = cache((id: string) => getGameById(id));
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { id } = await params;
+  const game = await loadGame(id);
+  if (!game) return { title: "見つかりません" };
+
+  const title = `${game.name}の配信者ランキング`;
+  const description = `${game.name}をいま配信している配信者を視聴者数順に表示。公式サイトや関連情報へのリンクもまとめています。`;
+
+  return {
+    title,
+    description,
+    alternates: { canonical: `/games/${id}` },
+    openGraph: { title, description, url: `/games/${id}` },
+  };
+}
+
 export default async function GameDetailPage({ params }: Props) {
   const { id } = await params;
 
   const [game, streams] = await Promise.all([
-    getGameById(id),
+    loadGame(id),
     getTopStreams({ gameId: id, limit: 30 }),
   ]);
 
