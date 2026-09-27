@@ -6,6 +6,7 @@ import { notFound } from "next/navigation";
 import {
   getGameById,
   getTopStreams,
+  getUsersByLogin,
   boxArt,
   streamThumb,
   elapsedSince,
@@ -54,6 +55,12 @@ export default async function GameDetailPage({ params }: Props) {
   // 取れなくてもページは従来どおり表示する（配信者一覧が主役なので）
   const details = await getGameDetails(game.igdb_id).catch(() => null);
 
+  // 配信者アイコンは表示時にその場で取得する（DBには保存しない方針）。
+  // getUsersByLogin は100件までまとめて1回で引ける
+  const users = await getUsersByLogin(streams.map((s) => s.user_login)).catch(
+    () => new Map(),
+  );
+
   const totalViewers = streams.reduce((sum, s) => sum + s.viewer_count, 0);
   const query = encodeURIComponent(game.name);
 
@@ -93,12 +100,8 @@ export default async function GameDetailPage({ params }: Props) {
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-12">
-      <Link href="/" className="text-sm text-gray-500 hover:text-purple-400">
-        ← 配信ランキング
-      </Link>
-
       {/* ゲーム情報の帯 */}
-      <div className="mt-4 flex flex-wrap items-center gap-6 rounded-xl border border-white/10 bg-white/5 p-5">
+      <div className="flex flex-wrap items-start gap-5 rounded-xl border border-white/10 bg-white/5 p-5">
         <Image
           src={boxArt(game.box_art_url, 144, 192)}
           alt={game.name}
@@ -213,9 +216,18 @@ export default async function GameDetailPage({ params }: Props) {
               </p>
               <Link
                 href={`/streamers/${stream.user_login}`}
-                className="mt-1 inline-block text-sm text-gray-400 transition hover:text-purple-400 hover:underline"
+                className="mt-1.5 flex items-center gap-2 text-sm text-gray-200 transition hover:text-purple-400"
               >
-                {stream.user_name} →
+                {users.get(stream.user_login)?.profile_image_url && (
+                  <Image
+                    src={users.get(stream.user_login)!.profile_image_url}
+                    alt={stream.user_name}
+                    width={24}
+                    height={24}
+                    className="shrink-0 rounded-full ring-1 ring-white/10"
+                  />
+                )}
+                <span className="truncate">{stream.user_name}</span>
               </Link>
             </li>
           ))}

@@ -70,12 +70,8 @@ export default async function StreamerPage({ params }: Props) {
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-12">
-      <Link href="/" className="text-sm text-gray-500 hover:text-purple-400">
-        ← 配信ランキング
-      </Link>
-
       {/* プロフィール */}
-      <div className="mt-4 flex flex-wrap items-center gap-6 rounded-xl border border-white/10 bg-white/5 p-6">
+      <div className="flex flex-wrap items-start gap-5 rounded-xl border border-white/10 bg-white/5 p-6">
         <Image
           src={user.profile_image_url}
           alt={user.display_name}
@@ -148,9 +144,9 @@ export default async function StreamerPage({ params }: Props) {
               {stream.game_id && (
                 <Link
                   href={`/games/${stream.game_id}`}
-                  className="mt-2 inline-block text-sm text-gray-500 hover:text-purple-400 hover:underline"
+                  className="mt-2 inline-block text-sm text-gray-200 transition hover:text-purple-400"
                 >
-                  {stream.game_name} →
+                  {stream.game_name}
                 </Link>
               )}
             </div>

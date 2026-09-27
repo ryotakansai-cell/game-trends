@@ -3,4 +3,6 @@
 // 相対パスでは「どのドメインのページか」を検索エンジンに伝えられないため。
 export const SITE_URL = "https://game-trends-psi.vercel.app";
 
-export const SITE_NAME = "ゲームトレンド";
+// 実態は配信者・配信が主役なので、ゲームではなく配信に寄せた名前にしている。
+// ここ1か所を変えればサイト全体の表示名とタイトルが変わる
+export const SITE_NAME = "配信トレンド";

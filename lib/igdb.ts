@@ -48,6 +48,7 @@ const MAX_LINKS = 6;
 
 type IgdbWebsite = { url: string; type?: number };
 type IgdbGame = {
+  slug?: string;
   genres?: { name: string }[];
   first_release_date?: number; // Unix秒
   rating?: number;
@@ -56,7 +57,7 @@ type IgdbGame = {
 };
 
 /** IGDBのwebsites配列を、表示用のリンク一覧に変換する */
-function toLinks(websites: IgdbWebsite[]): GameLink[] {
+function toLinks(websites: IgdbWebsite[], slug?: string): GameLink[] {
   const links: GameLink[] = [];
 
   // 公式サイトを先頭に置く。一番知りたいのはこれなので
@@ -75,7 +76,15 @@ function toLinks(websites: IgdbWebsite[]): GameLink[] {
     if (hit) links.push({ label, url: hit.url });
   }
 
-  return links.slice(0, MAX_LINKS);
+  const result = links.slice(0, MAX_LINKS);
+
+  // IGDBのゲームページ。ジャンル・スクリーンショット・関連作などが見られる。
+  // 上限とは別枠で最後に付ける（情報源を示す意味もある）
+  if (slug) {
+    result.push({ label: "IGDB", url: `https://www.igdb.com/games/${slug}` });
+  }
+
+  return result;
 }
 
 /** IGDBのIDからゲームの詳細を取得する。取れなければ null（ページは従来どおり表示する） */
@@ -97,7 +106,7 @@ export async function getGameDetails(
       Authorization: `Bearer ${token}`,
       Accept: "application/json",
     },
-    body: `fields genres.name,first_release_date,rating,rating_count,websites.url,websites.type; where id = ${id};`,
+    body: `fields slug,genres.name,first_release_date,rating,rating_count,websites.url,websites.type; where id = ${id};`,
   });
 
   if (!res.ok) return null;
@@ -117,6 +126,6 @@ export async function getGameDetails(
       game.rating && (game.rating_count ?? 0) >= 20
         ? Math.round(game.rating)
         : null,
-    links: toLinks(game.websites ?? []),
+    links: toLinks(game.websites ?? [], game.slug),
   };
 }

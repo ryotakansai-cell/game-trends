@@ -148,27 +148,6 @@ export default async function Home({ searchParams }: Props) {
             が視聴中
           </p>
         </div>
-
-        <div className="flex gap-4">
-          <Link
-            href="/creators"
-            className="text-sm text-gray-500 hover:text-purple-400"
-          >
-            Creators →
-          </Link>
-          <Link
-            href="/trending"
-            className="text-sm text-gray-500 hover:text-purple-400"
-          >
-            Trending →
-          </Link>
-          <Link
-            href="/games"
-            className="text-sm text-gray-500 hover:text-purple-400"
-          >
-            ゲームランキング →
-          </Link>
-        </div>
       </div>
 
       {/* プラットフォーム/言語切替（共通部品を使用。必ず縦に2段） */}
@@ -302,9 +281,9 @@ export default async function Home({ searchParams }: Props) {
                   <span className="text-gray-700">·</span>
                   <Link
                     href={entry.gameHref!}
-                    className="truncate text-xs text-gray-500 transition hover:text-purple-400 hover:underline"
+                    className="truncate text-xs text-gray-200 transition hover:text-purple-400"
                   >
-                    {entry.gameName} →
+                    {entry.gameName}
                   </Link>
                 </>
               )}
