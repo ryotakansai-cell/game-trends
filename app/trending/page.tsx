@@ -14,6 +14,15 @@ import {
 import { getCreatorIdMap } from "@/lib/creators";
 import { SegmentedTabs } from "@/components/SegmentedTabs";
 
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "急上昇の配信者",
+  description:
+    "24時間前と比べて視聴者数が伸びている配信者のランキング。Twitch・YouTubeを横断して表示します。",
+  alternates: { canonical: "/trending" },
+};
+
 // 5分間キャッシュする。cronが数時間おきなので、これ以上短くしても意味がない
 export const revalidate = 300;
 

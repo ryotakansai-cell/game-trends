@@ -3,6 +3,15 @@ import Link from "next/link";
 import { getCreators } from "@/lib/creators";
 import { getUsersByLogin } from "@/lib/twitch";
 
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "配信者一覧（プラットフォーム横断）",
+  description:
+    "Twitch・YouTubeのアカウントを同じ人物として紐付けた配信者の一覧。アイコンから統合ページへ移動できます。",
+  alternates: { canonical: "/creators" },
+};
+
 // YouTube APIを使わない（Twitchのみ）ので短めでよい
 export const revalidate = 600;
 

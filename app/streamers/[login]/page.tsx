@@ -1,3 +1,5 @@
+import { cache } from "react";
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -19,10 +21,30 @@ type Props = {
   params: Promise<{ login: string }>;
 };
 
+// 同じユーザー情報を generateMetadata と本体の両方で使うので
+// cache() で1リクエスト内の呼び出しをまとめる
+const loadUser = cache((login: string) => getUserByLogin(login));
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { login } = await params;
+  const user = await loadUser(login);
+  if (!user) return { title: "見つかりません" };
+
+  const title = `${user.display_name}のクリップ・アーカイブ`;
+  const description = `${user.display_name}（Twitch: ${user.login}）の人気クリップと過去の配信を一覧。配信中かどうかもわかります。`;
+
+  return {
+    title,
+    description,
+    alternates: { canonical: `/streamers/${login}` },
+    openGraph: { title, description, url: `/streamers/${login}` },
+  };
+}
+
 export default async function StreamerPage({ params }: Props) {
   const { login } = await params;
 
-  const user = await getUserByLogin(login);
+  const user = await loadUser(login);
   if (!user) notFound();
 
   const [stream, clips, videos] = await Promise.all([
