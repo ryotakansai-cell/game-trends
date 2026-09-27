@@ -22,7 +22,17 @@ function getCredentials() {
   return { clientId, clientSecret };
 }
 
+// 取得したトークンを使い回すための置き場。
+// これが無いと、APIを1回叩くたびにトークン取得の往復が発生する。
+// IGDB(lib/igdb.ts)も同じトークンを使うので、利用者が増えるぶん効果が大きい
+let cachedToken: { value: string; expiresAt: number } | null = null;
+
 async function getAccessToken() {
+  // 期限内ならそのまま使い回す（5分の余裕を見て失効扱いにする）
+  if (cachedToken && Date.now() < cachedToken.expiresAt) {
+    return cachedToken.value;
+  }
+
   const { clientId, clientSecret } = getCredentials();
 
   const res = await fetch(TOKEN_URL, {
@@ -39,7 +49,20 @@ async function getAccessToken() {
   if (!res.ok) throw new Error(`トークン取得に失敗: ${res.status}`);
 
   const json = await res.json();
-  return json.access_token as string;
+
+  cachedToken = {
+    value: json.access_token as string,
+    // expires_in は秒。5分(300秒)早めに失効させて、期限ぎりぎりの失敗を避ける
+    expiresAt: Date.now() + (Number(json.expires_in ?? 3600) - 300) * 1000,
+  };
+  return cachedToken.value;
+}
+
+/** IGDBもTwitchと同じ認証基盤を使うので、lib/igdb.ts から借りられるように公開する */
+export async function getTwitchAuth() {
+  const { clientId } = getCredentials();
+  const token = await getAccessToken();
+  return { clientId, token };
 }
 
 async function twitchFetch<T>(path: string, revalidate = 300): Promise<T[]> {

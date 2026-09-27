@@ -11,6 +11,7 @@ import {
   elapsedSince,
   formatViewers,
 } from "@/lib/twitch";
+import { getGameDetails } from "@/lib/igdb";
 
 export const revalidate = 180;
 
@@ -48,17 +49,37 @@ export default async function GameDetailPage({ params }: Props) {
 
   if (!game) notFound();
 
+  // IGDBの詳細。Twitchのレスポンスに入っている igdb_id を手がかりに引く。
+  // 「Just Chatting」のような非ゲームカテゴリは igdb_id が空なので null が返る。
+  // 取れなくてもページは従来どおり表示する（配信者一覧が主役なので）
+  const details = await getGameDetails(game.igdb_id).catch(() => null);
+
   const totalViewers = streams.reduce((sum, s) => sum + s.viewer_count, 0);
   const query = encodeURIComponent(game.name);
 
-  const links = [
+  // IGDBから取れた「本物のリンク」。公式サイトやSteamのページそのもの
+  const officialLinks = details?.links ?? [];
+
+  // IGDBがSteamのページを持っていないときだけ、Steamの検索を足す
+  const hasSteam = officialLinks.some((l) => l.label === "Steam");
+
+  // 検索に飛ばすリンク。日本語の攻略サイトはゲーム別のURLがAPIで取れないので、
+  // 各サイトの検索ページに渡す。URLは実際に叩いて200が返ることを確認したものだけ
+  // （Game8と4Gamerは確認できなかったため入れていない）
+  const searchLinks = [
+    { label: "GameWith", url: `https://gamewith.jp/search?keyword=${query}` },
+    { label: "ファミ通", url: `https://www.famitsu.com/search/?q=${query}` },
+    ...(hasSteam
+      ? []
+      : [
+          {
+            label: "Steamで検索",
+            url: `https://store.steampowered.com/search/?term=${query}`,
+          },
+        ]),
     {
       label: "YouTubeで検索",
       url: `https://www.youtube.com/results?search_query=${query}+実況`,
-    },
-    {
-      label: "Steamで検索",
-      url: `https://store.steampowered.com/search/?term=${query}`,
     },
     {
       label: "Twitchで開く",
@@ -96,8 +117,45 @@ export default async function GameDetailPage({ params }: Props) {
             が視聴中
           </p>
 
-          <div className="mt-3 flex flex-wrap gap-2">
-            {links.map((link) => (
+          {/* IGDBから取れたゲームそのものの情報。取れないときは丸ごと出さない */}
+          {details &&
+            (details.genres.length > 0 ||
+              details.releaseDate ||
+              details.rating !== null) && (
+              <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
+                {details.genres.length > 0 && (
+                  <span>{details.genres.join(" / ")}</span>
+                )}
+                {details.releaseDate && <span>{details.releaseDate} 発売</span>}
+                {details.rating !== null && (
+                  <span className="rounded bg-white/10 px-2 py-0.5 text-gray-300">
+                    評価 {details.rating}
+                  </span>
+                )}
+              </p>
+            )}
+
+          {/* 公式サイトなど、IGDBが持っている実際のページへのリンク。
+              検索に飛ばすだけのリンクと区別できるよう、色を濃くしている */}
+          {officialLinks.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {officialLinks.map((link) => (
+                <a
+                  key={link.label}
+                  href={link.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-full border border-purple-400/40 bg-purple-500/10 px-3 py-1 text-xs text-purple-200 transition hover:border-purple-400 hover:bg-purple-500/20"
+                >
+                  {link.label}
+                </a>
+              ))}
+            </div>
+          )}
+
+          {/* 検索に飛ばすリンク */}
+          <div className="mt-2 flex flex-wrap gap-2">
+            {searchLinks.map((link) => (
               <a
                 key={link.label}
                 href={link.url}
