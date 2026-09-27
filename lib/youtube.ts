@@ -414,6 +414,43 @@ async function getLiveByAccountIds(accountIds: number[]) {
   return map;
 }
 
+/** 動画IDから再生数をまとめて取得する（videos.list = 50件で1ユニット）。
+ *  playlistItems には再生数が含まれないので、人気順に並べるために別途取る */
+async function fetchVideoStats(
+  videoIds: string[],
+): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  const unique = [...new Set(videoIds)];
+  if (unique.length === 0) return map;
+
+  const apiKey = getApiKey();
+
+  const chunks: string[][] = [];
+  for (let i = 0; i < unique.length; i += 50) {
+    chunks.push(unique.slice(i, i + 50));
+  }
+
+  await Promise.all(
+    chunks.map(async (chunk) => {
+      const params = new URLSearchParams({
+        part: "statistics",
+        id: chunk.join(","),
+        key: apiKey,
+      });
+      const res = await fetch(`${YOUTUBE_API}/videos?${params}`);
+      const json = await res.json();
+      if (json.error) return; // 取れなくても再生数0として扱い、表示は続ける
+
+      for (const item of json.items ?? []) {
+        // viewCount は文字列で返ってくるので数値に直す
+        map.set(item.id, Number(item.statistics?.viewCount ?? 0));
+      }
+    }),
+  );
+
+  return map;
+}
+
 /** YouTubeアカウントの中身を PlatformContent に変換する */
 export async function getYouTubeContent(
   accounts: PlatformAccount[],
@@ -432,39 +469,64 @@ export async function getYouTubeContent(
   // 本人を優先して先頭3チャンネルまでに絞る
   const uploadTargets = new Set(accounts.slice(0, 3).map((a) => a.id));
 
-  return Promise.all(
+  // まず全チャンネルの投稿一覧を取る（1チャンネル1ユニット）
+  const uploadsByAccount = new Map<number, YouTubeUpload[]>();
+  await Promise.all(
     accounts.map(async (account) => {
-      const uploads = uploadTargets.has(account.id)
-        ? await getRecentUploads(account.platform_id, 6).catch(() => [])
-        : [];
-      const liveRow = live.get(account.id);
+      if (!uploadTargets.has(account.id)) return;
+      const uploads = await getRecentUploads(account.platform_id, 12).catch(
+        () => [],
+      );
+      uploadsByAccount.set(account.id, uploads);
+    }),
+  );
 
-      return {
-        accountId: account.id,
-        platform: "youtube",
-        label: "YouTube",
-        relation: account.relation,
-        displayName: account.display_name,
-        iconUrl: icons.get(account.platform_id) ?? null,
-        profileUrl: `https://www.youtube.com/channel/${account.platform_id}`,
-        live: liveRow
-          ? {
-              title: liveRow.title,
-              url: `https://www.youtube.com/watch?v=${liveRow.contentId}`,
-              thumbnailUrl: youtubeThumbnail(liveRow.contentId),
-              meta: `${liveRow.viewers.toLocaleString("ja-JP")}人が視聴中`,
-            }
-          : null,
-        // YouTubeには「クリップ」に相当するAPIが無いので常に空
-        clips: [],
-        videos: uploads.map((v) => ({
+  // 再生数は全チャンネル分まとめて1回で取る（合計1ユニット）
+  const allVideoIds = [...uploadsByAccount.values()]
+    .flat()
+    .map((u) => u.videoId);
+  const stats = await fetchVideoStats(allVideoIds).catch(() => new Map());
+
+  return accounts.map((account) => {
+    const uploads = uploadsByAccount.get(account.id) ?? [];
+    const liveRow = live.get(account.id);
+
+    return {
+      accountId: account.id,
+      platform: "youtube",
+      label: "YouTube",
+      relation: account.relation,
+      displayName: account.display_name,
+      iconUrl: icons.get(account.platform_id) ?? null,
+      profileUrl: `https://www.youtube.com/channel/${account.platform_id}`,
+      live: liveRow
+        ? {
+            title: liveRow.title,
+            url: `https://www.youtube.com/watch?v=${liveRow.contentId}`,
+            thumbnailUrl: youtubeThumbnail(liveRow.contentId),
+            meta: `${liveRow.viewers.toLocaleString("ja-JP")}人が視聴中`,
+          }
+        : null,
+      items: uploads.map((v) => {
+        const viewCount = stats.get(v.videoId) ?? 0;
+        return {
           id: v.videoId,
           title: v.title,
           url: `https://www.youtube.com/watch?v=${v.videoId}`,
           thumbnailUrl: youtubeThumbnail(v.videoId),
-          meta: new Date(v.publishedAt).toLocaleDateString("ja-JP"),
-        })),
-      };
-    }),
-  );
+          platform: "youtube",
+          platformLabel: "YouTube",
+          relation: account.relation,
+          kindLabel: "動画",
+          channelName: account.display_name,
+          publishedAt: v.publishedAt,
+          viewCount,
+          meta:
+            (viewCount > 0
+              ? `${viewCount.toLocaleString("ja-JP")}回視聴 ・ `
+              : "") + new Date(v.publishedAt).toLocaleDateString("ja-JP"),
+        };
+      }),
+    };
+  });
 }

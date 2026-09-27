@@ -457,9 +457,44 @@ export async function getTwitchContent(
       // 残り3つは互いに独立しているので並列で取る
       const [stream, clips, videos] = await Promise.all([
         getStreamByLogin(login).catch(() => null),
-        user ? getClipsByBroadcaster(user.id, 7, 8).catch(() => []) : [],
-        user ? getVideosByUser(user.id, 6).catch(() => []) : [],
+        user ? getClipsByBroadcaster(user.id, 30, 20).catch(() => []) : [],
+        user ? getVideosByUser(user.id, 12).catch(() => []) : [],
       ]);
+
+      const displayName = user?.display_name ?? account.display_name;
+
+      // クリップとアーカイブを、同じ ContentItem の形に揃えて1本にまとめる。
+      // ページ側で混ぜて並び替えるため、種別は kindLabel で見分ける
+      const items = [
+        ...clips.map((c) => ({
+          id: c.id,
+          title: c.title,
+          url: c.url,
+          thumbnailUrl: c.thumbnail_url,
+          platform: "twitch",
+          platformLabel: "Twitch",
+          relation: account.relation,
+          kindLabel: "クリップ",
+          channelName: displayName,
+          publishedAt: c.created_at,
+          viewCount: c.view_count,
+          meta: `${c.view_count.toLocaleString("ja-JP")}回再生 ・ ${formatDate(c.created_at)}`,
+        })),
+        ...videos.map((v) => ({
+          id: v.id,
+          title: v.title,
+          url: v.url,
+          thumbnailUrl: videoThumb(v.thumbnail_url),
+          platform: "twitch",
+          platformLabel: "Twitch",
+          relation: account.relation,
+          kindLabel: "アーカイブ",
+          channelName: displayName,
+          publishedAt: v.created_at,
+          viewCount: v.view_count,
+          meta: `${v.view_count.toLocaleString("ja-JP")}回視聴 ・ ${v.duration} ・ ${formatDate(v.created_at)}`,
+        })),
+      ];
 
       return {
         accountId: account.id,
@@ -467,7 +502,7 @@ export async function getTwitchContent(
         label: "Twitch",
         relation: account.relation,
         // APIが取れたらそちらを優先、ダメならDBに入っている名前を使う
-        displayName: user?.display_name ?? account.display_name,
+        displayName,
         iconUrl: user?.profile_image_url ?? null,
         profileUrl: `https://twitch.tv/${login}`,
         live: stream
@@ -478,20 +513,7 @@ export async function getTwitchContent(
               meta: `${formatViewers(stream.viewer_count)}人が視聴中 ・ ${elapsedSince(stream.started_at)}経過`,
             }
           : null,
-        clips: clips.map((c) => ({
-          id: c.id,
-          title: c.title,
-          url: c.url,
-          thumbnailUrl: c.thumbnail_url,
-          meta: `${c.view_count.toLocaleString("ja-JP")}回再生 ・ ${formatDate(c.created_at)}`,
-        })),
-        videos: videos.map((v) => ({
-          id: v.id,
-          title: v.title,
-          url: v.url,
-          thumbnailUrl: videoThumb(v.thumbnail_url),
-          meta: `${v.view_count.toLocaleString("ja-JP")}回視聴 ・ ${v.duration}`,
-        })),
+        items,
       };
     }),
   );
