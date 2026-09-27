@@ -3,6 +3,8 @@
 # game-trends
 
 Twitch・YouTube Liveの配信ランキングサイト。将来的に他プラットフォームも統合予定。
+表示名は「配信トレンド」（`lib/site.ts` の `SITE_NAME`）。リポジトリ名とドメインは
+game-trends のままだが、中身は配信者・配信が主役でゲームは従なので表示名だけ寄せた。
 
 - 本番: https://game-trends-psi.vercel.app
 - リポジトリ: https://github.com/ryotakansai-cell/game-trends
@@ -43,6 +45,7 @@ app/
     ├── cron/snapshot/route.ts        Twitch: 毎時DBに保存（games/snapshots、accounts/live_snapshots）
     └── cron/youtube-snapshot/route.ts YouTube: 毎時DBに保存（accounts/live_snapshots）
 components/
+├── SiteHeader.tsx              全ページ共通のヘッダー（ホーム + 下線ナビ）
 └── SegmentedTabs.tsx           JP/Global などのタブUI（3ページで共用）
 lib/
 ├── twitch.ts                   Twitch APIとの通信（唯一の窓口）
@@ -119,6 +122,27 @@ DBを直接読む（Twitchと違い、表示のたびにAPIを叩けないため
 
 配信者アイコンは表示時にその場で取得し、DBには保存しない
 （Twitchの`getUsersByLogin`、YouTubeの`getChannelIcons`とも同じ方針）。
+
+## UIの約束ごと
+
+ナビゲーションは `components/SiteHeader.tsx` に集約する。各ページに
+「← 配信ランキング」のような戻りリンクを置かない。戻ることしかできず、
+ゲーム一覧から配信者一覧へ移るのに一度トップへ戻る必要が出るため。
+
+色は役割で決める。**紫は「現在地」と「hover」にだけ使う**。
+使いすぎると「今どこにいるか」が伝わらなくなる。
+
+| 役割                                 | 通常      | hover |
+| ------------------------------------ | --------- | ----- |
+| ナビの現在地                         | 紫 + 下線 | —     |
+| ナビのその他                         | グレー    | 白    |
+| 本文中のリンク（ゲーム名・配信者名） | 白        | 紫    |
+| 補助情報（視聴者数・日付）           | グレー    | —     |
+
+リンクの印に `→` を使わない。矢印は方向を表す記号であって「リンク」の意味はなく、
+色で示せば足りる。「もっと見る」のように矢印そのものに意味がある場合だけ使う。
+
+配信者を出す場所には必ずアイコンを付ける。
 
 ## 禁止事項
 

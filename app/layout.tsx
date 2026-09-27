@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Analytics } from "@vercel/analytics/next";
+import { SiteHeader } from "@/components/SiteHeader";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 
 const geistSans = Geist({
@@ -22,7 +23,7 @@ export const metadata: Metadata = {
   // title.template は「各ページのタイトル | サイト名」を自動で組み立てる指定。
   // 各ページが title だけ返せばよくなる
   title: {
-    default: `${SITE_NAME} | Twitch・YouTubeの配信ランキング`,
+    default: `${SITE_NAME} | Twitch・YouTubeのライブ配信ランキング`,
     template: `%s | ${SITE_NAME}`,
   },
   description:
@@ -46,6 +47,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
+        <SiteHeader />
         {children}
         {/* どのページが見られているかを測る。
             推測で機能を増やす前に、実際の閲覧を知るために入れた。

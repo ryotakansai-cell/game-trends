@@ -27,11 +27,7 @@ export default async function CreatorsPage() {
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-12">
-      <Link href="/" className="text-sm text-gray-500 hover:text-purple-400">
-        ← 配信ランキング
-      </Link>
-
-      <h1 className="mt-4 text-4xl font-bold text-purple-400">Creators</h1>
+      <h1 className="text-4xl font-bold text-purple-400">Creators</h1>
       <p className="mt-2 text-sm text-gray-400">
         プラットフォームをまたいで紐付けた配信者 ・ {creators.length}人
       </p>

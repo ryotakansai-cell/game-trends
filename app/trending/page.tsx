@@ -127,21 +127,6 @@ export default async function TrendingPage({ searchParams }: Props) {
             24時間前と比べて伸びている配信 ・ {entries.length}件
           </p>
         </div>
-
-        <div className="flex gap-4">
-          <Link
-            href="/"
-            className="text-sm text-gray-500 hover:text-purple-400"
-          >
-            Live Ranking →
-          </Link>
-          <Link
-            href="/games"
-            className="text-sm text-gray-500 hover:text-purple-400"
-          >
-            ゲームランキング →
-          </Link>
-        </div>
       </div>
 
       {/* 共通部品を使う。見た目の指定はSegmentedTabs側に集約されている */}

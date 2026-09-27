@@ -1,7 +1,6 @@
 import { cache } from "react";
 import type { Metadata } from "next";
 import Image from "next/image";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
   getCreator,
@@ -173,12 +172,8 @@ export default async function CreatorPage({ params, searchParams }: Props) {
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-12">
-      <Link href="/" className="text-sm text-gray-500 hover:text-purple-400">
-        ← 配信ランキング
-      </Link>
-
       {/* ヘッダー：人物そのものの情報 */}
-      <div className="mt-4 flex flex-wrap items-center gap-6 rounded-xl border border-white/10 bg-white/5 p-6">
+      <div className="flex flex-wrap items-start gap-5 rounded-xl border border-white/10 bg-white/5 p-6">
         {headerIcon && (
           <Image
             src={headerIcon}
