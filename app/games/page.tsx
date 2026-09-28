@@ -31,7 +31,7 @@ export default async function Home() {
   );
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-12">
+    <main className="mx-auto w-full max-w-6xl px-6 py-12">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-4xl font-bold text-purple-400">ゲームトレンド</h1>

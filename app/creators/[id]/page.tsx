@@ -75,18 +75,34 @@ function narrowToRecent(items: ContentItem[]) {
 }
 
 /** 1件ぶんのカード。どのプラットフォームの何なのかをバッジで示す。
- *  チャンネルごとに分けない代わりに、各カードが出自を持つ */
+ *  チャンネルごとに分けない代わりに、各カードが出自を持つ。
+ *
+ *  スマホで縦積みにすると1件で画面の半分を占めてしまうので、
+ *  狭い画面では「サムネ左・文字右」の横並びにする（YouTubeアプリの検索結果と同じ形）。
+ *  sm以上（640px〜）では従来どおりサムネの下に文字を置く。
+ *  横スクロールの帯の中では常に縦積みにしたいので stacked で切り替える */
 function ItemCard({
   item,
   className = "",
+  stacked = false,
 }: {
   item: ContentItem;
   className?: string;
+  stacked?: boolean;
 }) {
   return (
     <li className={`group ${className}`}>
-      <a href={item.url} target="_blank" rel="noopener noreferrer">
-        <div className="relative aspect-video overflow-hidden rounded-lg border border-white/10">
+      <a
+        href={item.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={stacked ? "block" : "flex gap-3 sm:block"}
+      >
+        <div
+          className={`relative aspect-video overflow-hidden rounded-lg border border-white/10 ${
+            stacked ? "" : "w-40 shrink-0 sm:w-auto"
+          }`}
+        >
           <Image
             src={item.thumbnailUrl}
             alt={item.title}
@@ -95,26 +111,33 @@ function ItemCard({
             unoptimized
           />
           <span
-            className={`absolute left-2 top-2 rounded px-2 py-0.5 text-xs font-bold text-white ${
+            className={`absolute left-1.5 top-1.5 rounded px-1.5 py-0.5 text-[10px] font-bold text-white sm:left-2 sm:top-2 sm:px-2 sm:text-xs ${
               item.platform === "twitch" ? "bg-purple-700/90" : "bg-red-700/90"
             }`}
           >
             {item.platformLabel}
           </span>
-          <span className="absolute right-2 top-2 rounded bg-black/70 px-2 py-0.5 text-xs text-gray-200">
+          <span className="absolute right-1.5 top-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-gray-200 sm:right-2 sm:top-2 sm:px-2 sm:text-xs">
             {item.kindLabel}
           </span>
         </div>
-        <p className="mt-2 line-clamp-2 text-sm text-gray-200 group-hover:text-purple-300">
-          {item.title}
-        </p>
-        <p className="mt-1 text-xs text-gray-500">{item.meta}</p>
-        {/* 本人以外（切り抜き・アーカイブ）はどのチャンネルのものか明示する */}
-        {item.relation !== "self" && (
-          <p className="mt-0.5 truncate text-xs text-gray-600">
-            {relationLabel(item.relation)} ・ {item.channelName}
+        {/* min-w-0 が無いと、横並びのときに長いタイトルが幅を押し広げてはみ出す */}
+        <div className="min-w-0 flex-1">
+          <p
+            className={`line-clamp-2 text-sm text-gray-200 group-hover:text-purple-300 ${
+              stacked ? "mt-2" : "sm:mt-2"
+            }`}
+          >
+            {item.title}
           </p>
-        )}
+          <p className="mt-1 text-xs text-gray-500">{item.meta}</p>
+          {/* 本人以外（切り抜き・アーカイブ）はどのチャンネルのものか明示する */}
+          {item.relation !== "self" && (
+            <p className="mt-0.5 truncate text-xs text-gray-600">
+              {relationLabel(item.relation)} ・ {item.channelName}
+            </p>
+          )}
+        </div>
       </a>
     </li>
   );
@@ -171,7 +194,7 @@ export default async function CreatorPage({ params, searchParams }: Props) {
   const sortLabel = sortByRecent ? "新しい順" : `${narrowed.label}の人気順`;
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-12">
+    <main className="mx-auto w-full max-w-6xl px-6 py-12">
       {/* ヘッダー：人物そのものの情報 */}
       <div className="flex flex-wrap items-start gap-5 rounded-xl border border-white/10 bg-white/5 p-6">
         {headerIcon && (
@@ -221,9 +244,9 @@ export default async function CreatorPage({ params, searchParams }: Props) {
                   href={c.live!.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="group flex flex-wrap gap-4 rounded-xl border border-white/10 p-4 transition hover:border-purple-400/50"
+                  className="group flex gap-3 rounded-xl border border-white/10 p-3 transition hover:border-purple-400/50 sm:gap-4 sm:p-4"
                 >
-                  <div className="relative aspect-video w-full overflow-hidden rounded-lg sm:w-56">
+                  <div className="relative aspect-video w-40 shrink-0 overflow-hidden rounded-lg sm:w-56">
                     <Image
                       src={c.live!.thumbnailUrl}
                       alt={c.live!.title}
@@ -235,8 +258,8 @@ export default async function CreatorPage({ params, searchParams }: Props) {
                       {c.label}
                     </span>
                   </div>
-                  <div className="flex-1">
-                    <p className="line-clamp-2 font-bold text-gray-100 group-hover:text-purple-300">
+                  <div className="min-w-0 flex-1">
+                    <p className="line-clamp-2 text-sm font-bold text-gray-100 group-hover:text-purple-300 sm:text-base">
                       {c.live!.title}
                     </p>
                     <p className="mt-2 text-sm text-gray-400">{c.live!.meta}</p>
@@ -334,6 +357,7 @@ export default async function CreatorPage({ params, searchParams }: Props) {
                   key={`${item.platform}-${item.id}`}
                   item={item}
                   className="w-60 shrink-0"
+                  stacked
                 />
               ))}
             </ul>

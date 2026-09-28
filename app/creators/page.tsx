@@ -26,7 +26,7 @@ export default async function CreatorsPage() {
   const users = await getUsersByLogin(logins);
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-12">
+    <main className="mx-auto w-full max-w-6xl px-6 py-12">
       <h1 className="text-4xl font-bold text-purple-400">Creators</h1>
       <p className="mt-2 text-sm text-gray-400">
         プラットフォームをまたいで紐付けた配信者 ・ {creators.length}人
