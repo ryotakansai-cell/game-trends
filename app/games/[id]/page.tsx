@@ -13,11 +13,14 @@ import {
   formatViewers,
 } from "@/lib/twitch";
 import { getGameDetails } from "@/lib/igdb";
+import { SegmentedTabs } from "@/components/SegmentedTabs";
 
 export const revalidate = 180;
 
 type Props = {
   params: Promise<{ id: string }>;
+  // ?lang=all のときだけ全世界。指定なしは日本（トップページと同じ規則）
+  searchParams: Promise<{ lang?: string }>;
 };
 
 // generateMetadata と本体で同じゲーム情報が必要なので、
@@ -40,12 +43,21 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-export default async function GameDetailPage({ params }: Props) {
+export default async function GameDetailPage({ params, searchParams }: Props) {
   const { id } = await params;
+  const { lang } = await searchParams;
+  const isJapanese = lang !== "all"; // デフォルトは日本
 
+  // 言語で絞るかどうかだけが JP / Global の違い。
+  // Twitchの /streams は game_id と language を同時に指定できるので、
+  // 取得の段階で絞り込める（取ってから捨てるより無駄がない）
   const [game, streams] = await Promise.all([
     loadGame(id),
-    getTopStreams({ gameId: id, limit: 30 }),
+    getTopStreams({
+      gameId: id,
+      language: isJapanese ? "ja" : undefined,
+      limit: 30,
+    }),
   ]);
 
   if (!game) notFound();
@@ -173,15 +185,40 @@ export default async function GameDetailPage({ params }: Props) {
         </div>
       </div>
 
-      {/* 配信者一覧 */}
-      <h2 className="mt-10 text-lg font-bold text-gray-200">配信中</h2>
+      {/* 配信者一覧。見出しの横に JP / Global の切り替え */}
+      <div className="mt-10 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-bold text-gray-200">配信中</h2>
+        <SegmentedTabs
+          options={[
+            { label: "JP", href: `/games/${id}`, active: isJapanese },
+            {
+              label: "Global",
+              href: `/games/${id}?lang=all`,
+              active: !isJapanese,
+            },
+          ]}
+        />
+      </div>
 
       {streams.length === 0 ? (
         <p className="mt-4 text-sm text-gray-500">
-          今このゲームを配信している人はいません。
+          {isJapanese ? (
+            <>
+              今このゲームを日本語で配信している人はいません。
+              {/* 日本で0件でも海外では配信されていることが多いので、切り替え先を示す */}
+              <Link
+                href={`/games/${id}?lang=all`}
+                className="ml-2 text-gray-200 transition hover:text-purple-400"
+              >
+                Globalで見る
+              </Link>
+            </>
+          ) : (
+            "今このゲームを配信している人はいません。"
+          )}
         </p>
       ) : (
-        <ul className="mt-4 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="mt-4 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {streams.map((stream, index) => (
             <li key={stream.id} className="group">
               <a
