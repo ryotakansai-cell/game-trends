@@ -69,7 +69,7 @@ export default async function StreamerPage({ params }: Props) {
   ];
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-12">
+    <main className="mx-auto w-full max-w-6xl px-6 py-12">
       {/* プロフィール */}
       <div className="flex flex-wrap items-start gap-5 rounded-xl border border-white/10 bg-white/5 p-6">
         <Image
@@ -119,38 +119,49 @@ export default async function StreamerPage({ params }: Props) {
       {stream && (
         <section className="mt-10">
           <h2 className="text-lg font-bold text-gray-200">配信中</h2>
-          <a
-            href={`https://twitch.tv/${user.login}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="group mt-4 flex flex-wrap gap-5 rounded-xl border border-white/10 p-4 transition hover:border-purple-400/50"
-          >
-            <Image
-              src={streamThumb(stream.thumbnail_url)}
-              alt={stream.title}
-              width={320}
-              height={180}
-              className="rounded-lg"
-              unoptimized
-            />
-            <div className="flex-1">
-              <p className="font-bold text-gray-100 group-hover:text-purple-300">
-                {stream.title}
-              </p>
-              <p className="mt-2 text-sm text-gray-400">
+          {/* 以前は全体を <a> で包み、その中にゲームの <Link> を入れていた。
+              リンクの中にリンクを入れるのはHTMLとして不正なので、
+              配信へのリンク（サムネとタイトル）とゲームへのリンクを分けた。
+              スマホではサムネを画面幅いっぱいにせず、左に小さく置く */}
+          <div className="group mt-4 flex gap-3 rounded-xl border border-white/10 p-3 transition hover:border-purple-400/50 sm:gap-5 sm:p-4">
+            <a
+              href={`https://twitch.tv/${user.login}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="relative aspect-video w-40 shrink-0 overflow-hidden rounded-lg sm:w-80"
+            >
+              <Image
+                src={streamThumb(stream.thumbnail_url)}
+                alt={stream.title}
+                fill
+                className="object-cover"
+                unoptimized
+              />
+            </a>
+            <div className="min-w-0 flex-1">
+              <a
+                href={`https://twitch.tv/${user.login}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <p className="line-clamp-2 text-sm font-bold text-gray-100 group-hover:text-purple-300 sm:text-base">
+                  {stream.title}
+                </p>
+              </a>
+              <p className="mt-2 text-xs text-gray-400 sm:text-sm">
                 {formatViewers(stream.viewer_count)}人が視聴中 ・{" "}
                 {elapsedSince(stream.started_at)}経過
               </p>
               {stream.game_id && (
                 <Link
                   href={`/games/${stream.game_id}`}
-                  className="mt-2 inline-block text-sm text-gray-200 transition hover:text-purple-400"
+                  className="mt-2 inline-block text-xs text-gray-200 transition hover:text-purple-400 sm:text-sm"
                 >
                   {stream.game_name}
                 </Link>
               )}
             </div>
-          </a>
+          </div>
         </section>
       )}
 
@@ -162,30 +173,37 @@ export default async function StreamerPage({ params }: Props) {
             直近1週間のクリップはありません。
           </p>
         ) : (
-          <ul className="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          <ul className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-4">
             {clips.map((clip) => (
               <li key={clip.id} className="group">
-                <a href={clip.url} target="_blank" rel="noopener noreferrer">
-                  <div className="relative overflow-hidden rounded-lg border border-white/10">
+                {/* スマホでは「サムネ左・文字右」の横並び、sm以上では縦積み */}
+                <a
+                  href={clip.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex gap-3 sm:block"
+                >
+                  <div className="relative aspect-video w-40 shrink-0 overflow-hidden rounded-lg border border-white/10 sm:w-auto">
                     <Image
                       src={clip.thumbnail_url}
                       alt={clip.title}
-                      width={320}
-                      height={180}
-                      className="w-full transition duration-300 group-hover:scale-105"
+                      fill
+                      className="object-cover transition duration-300 group-hover:scale-105"
                       unoptimized
                     />
-                    <span className="absolute bottom-2 right-2 rounded bg-black/80 px-1.5 py-0.5 text-xs text-white">
+                    <span className="absolute bottom-1.5 right-1.5 rounded bg-black/80 px-1.5 py-0.5 text-[10px] text-white sm:bottom-2 sm:right-2 sm:text-xs">
                       {Math.round(clip.duration)}秒
                     </span>
                   </div>
-                  <p className="mt-2 line-clamp-2 text-sm text-gray-200 group-hover:text-purple-300">
-                    {clip.title}
-                  </p>
-                  <p className="mt-1 text-xs text-gray-500">
-                    {clip.view_count.toLocaleString("ja-JP")}回再生 ・{" "}
-                    {formatDate(clip.created_at)}
-                  </p>
+                  <div className="min-w-0 flex-1">
+                    <p className="line-clamp-2 text-sm text-gray-200 group-hover:text-purple-300 sm:mt-2">
+                      {clip.title}
+                    </p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      {clip.view_count.toLocaleString("ja-JP")}回再生 ・{" "}
+                      {formatDate(clip.created_at)}
+                    </p>
+                  </div>
                 </a>
               </li>
             ))}
@@ -201,25 +219,33 @@ export default async function StreamerPage({ params }: Props) {
             公開されているアーカイブはありません。
           </p>
         ) : (
-          <ul className="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <ul className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3">
             {videos.map((video) => (
               <li key={video.id} className="group">
-                <a href={video.url} target="_blank" rel="noopener noreferrer">
-                  <Image
-                    src={videoThumb(video.thumbnail_url)}
-                    alt={video.title}
-                    width={320}
-                    height={180}
-                    className="w-full rounded-lg border border-white/10 transition duration-300 group-hover:scale-105"
-                    unoptimized
-                  />
-                  <p className="mt-2 line-clamp-2 text-sm text-gray-200 group-hover:text-purple-300">
-                    {video.title}
-                  </p>
-                  <p className="mt-1 text-xs text-gray-500">
-                    {video.view_count.toLocaleString("ja-JP")}回視聴 ・{" "}
-                    {video.duration} ・ {formatDate(video.created_at)}
-                  </p>
+                <a
+                  href={video.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex gap-3 sm:block"
+                >
+                  <div className="relative aspect-video w-40 shrink-0 overflow-hidden rounded-lg border border-white/10 sm:w-auto">
+                    <Image
+                      src={videoThumb(video.thumbnail_url)}
+                      alt={video.title}
+                      fill
+                      className="object-cover transition duration-300 group-hover:scale-105"
+                      unoptimized
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="line-clamp-2 text-sm text-gray-200 group-hover:text-purple-300 sm:mt-2">
+                      {video.title}
+                    </p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      {video.view_count.toLocaleString("ja-JP")}回視聴 ・{" "}
+                      {video.duration} ・ {formatDate(video.created_at)}
+                    </p>
+                  </div>
                 </a>
               </li>
             ))}

@@ -99,7 +99,7 @@ export default async function GameDetailPage({ params }: Props) {
   ];
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-12">
+    <main className="mx-auto w-full max-w-6xl px-6 py-12">
       {/* ゲーム情報の帯 */}
       <div className="flex flex-wrap items-start gap-5 rounded-xl border border-white/10 bg-white/5 p-5">
         <Image
