@@ -1,6 +1,6 @@
 // cronエンドポイントを叩くだけのテスト用スクリプト
 // 使い方: npm run test:cron -- youtube-snapshot
-//         npm run test:cron -- youtube-snapshot https://game-trends-psi.vercel.app
+//         npm run test:cron -- youtube-snapshot https://stream-trends.sukinote.com
 const path = process.argv[2];
 const base = process.argv[3] ?? "http://localhost:3000";
 if (!path) {

@@ -3,11 +3,23 @@
 # game-trends
 
 Twitch・YouTube Liveの配信ランキングサイト。将来的に他プラットフォームも統合予定。
-表示名は「配信トレンド」（`lib/site.ts` の `SITE_NAME`）。リポジトリ名とドメインは
-game-trends のままだが、中身は配信者・配信が主役でゲームは従なので表示名だけ寄せた。
+表示名は「配信トレンド」（`lib/site.ts` の `SITE_NAME`）。リポジトリ名は
+game-trends のままだが、中身は配信者・配信が主役でゲームは従なので表示名とURLを寄せた。
 
-- 本番: https://game-trends-psi.vercel.app
+- 本番: https://stream-trends.sukinote.com
+- 旧URL: https://game-trends-psi.vercel.app（Vercelの既定ドメイン。新URLへ転送する）
 - リポジトリ: https://github.com/ryotakansai-cell/game-trends
+
+### ドメイン
+
+`sukinote.com`（好きノート）を Cloudflare Registrar で取得し、作ったサイトを
+サブドメインで並べる（`stream-trends.` / `yorushika.`）。サイトごとにドメインを
+買うと年額が積み上がるため1つにまとめた。名前に本名を入れないのは、一般の人に
+作者の名前を見せないため。DNSは Cloudflare に CNAME を1行（Proxyは灰色の
+DNS only。オレンジだとVercelの証明書発行とぶつかる）。
+
+URLを変えるときは、GitHub Secrets の `SITE_URL` を**先に**変えてから旧URLの転送を
+入れる。cronの curl は転送を追わないので、逆順だとエラーにならずに収集が止まる。
 
 ## 作者について
 
