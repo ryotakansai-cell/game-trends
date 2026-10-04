@@ -114,6 +114,11 @@ YouTubeの1日の枠の配分。cronはサイトの本体機能なので最優�
 定期実行はVercel CronではなくGitHub Actionsを使う。
 Vercel Hobbyプランのcronは1日1回しか実行できないため。
 
+公開リポジトリは60日間コミットが無いと schedule が通知なしで止まる。
+`keepalive.yml` が毎週見て、最後のコミットから45日たっていたら空コミットを入れる。
+開発中は何もしない（毎月決め打ちにすると、そのたびにVercelが作り直すため）。
+ヨルシカ側はボットがほぼ毎日データ更新をコミットするので不要。
+
 `page.tsx` から自分のAPIルートをfetchしない。Server Componentなので
 `lib/` の関数を直接呼ぶ。トップページはTwitch（API直叩き）とYouTube
 （DB読み取り）の両方を呼び、`UnifiedEntry` という共通の形に変換して
