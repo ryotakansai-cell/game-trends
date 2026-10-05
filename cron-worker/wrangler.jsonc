@@ -1,0 +1,26 @@
+// Cloudflare Workers の設定。デプロイは cron-worker フォルダで `npm run deploy`
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "stream-trends-cron",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+
+  // 外から呼べるURL（*.workers.dev）は作らない。時間で動くだけなので不要で、
+  // 公開しておくと誰でも叩ける入口が1つ増えるため
+  "workers_dev": false,
+
+  // 時刻は UTC。毎時23分に Twitch、38分に YouTube（src/index.ts の JOBS と対応）
+  "triggers": {
+    "crons": ["23 * * * *", "38 * * * *"],
+  },
+
+  // 公開してよい値だけをここに書く。CRON_SECRET は `npx wrangler secret put CRON_SECRET` で登録する
+  "vars": {
+    "SITE_URL": "https://stream-trends.sukinote.com",
+  },
+
+  // 実行ログをダッシュボードで見られるようにする（失敗したときの原因調査用）
+  "observability": {
+    "enabled": true,
+  },
+}
