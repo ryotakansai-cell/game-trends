@@ -254,7 +254,15 @@ export async function getUsersByLogin(logins: string[]) {
     }),
   );
 
-  results.flat().forEach((user) => map.set(user.login, user));
+  // 一覧のアイコンは24〜56pxでしか出さないので、300x300（約100KB）ではなく
+  // Twitchが用意している70x70（約9KB）を使う。画像最適化を切っているため、
+  // ここで小さくしないと一覧1ページで数MBを読み込むことになる
+  results.flat().forEach((user) =>
+    map.set(user.login, {
+      ...user,
+      profile_image_url: user.profile_image_url.replace("300x300", "70x70"),
+    }),
+  );
   return map;
 }
 export type TwitchClip = {
