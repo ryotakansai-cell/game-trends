@@ -1,0 +1,36 @@
+// 配信トレンドを Cloudflare Workers で動かす設定（OpenNext 経由）。
+// 毎時の収集を呼ぶ Worker は別物（cron-worker/wrangler.jsonc）
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "stream-trends",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+
+  // JS・CSS・public の画像などの静的ファイル。ここへのリクエストは無料・無制限
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS",
+  },
+
+  // OpenNext がキャッシュの作り直しで自分自身を呼ぶための設定
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "stream-trends",
+    },
+  ],
+
+  // ページの作り置き（revalidate で作り直すまで全訪問者に共通で返す分）の置き場
+  "r2_buckets": [
+    {
+      "binding": "NEXT_INC_CACHE_R2_BUCKET",
+      "bucket_name": "stream-trends-cache",
+    },
+  ],
+
+  // 実行ログをダッシュボードで見られるようにする（不具合の調査用）
+  "observability": {
+    "enabled": true,
+  },
+}
