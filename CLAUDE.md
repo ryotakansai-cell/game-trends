@@ -322,8 +322,10 @@ probeの結果がある人でも検索は妨げないようにするため。
 7. 旧テーブル（`streamers`系/`youtube_streamers`系）の削除（移行が安定したら）
 8. 保存データの間引き（1年以上前は日次の代表値だけ残す）。2026-10 の実測で
    1日約0.7MB・年約250MB、Turso の無料枠 5GB に対して約20年もつので急がない
-9. トップと急上昇で、表示のたびに YouTube の `channels.list`（アイコン取得）を
-   呼んでいる。枠の節約のため、アイコンを作り置きする（fetch に revalidate を付ける等）
+9. ~~表示のたびに YouTube API を呼んでいた~~ fetch に revalidate を付けて作り置き済み。
+   急上昇の SQL が全履歴を読んでいたのも、時間の範囲で絞るように直した
+   （`lib/snapshot-range.ts`）。新しい SQL を書くときも、live_snapshots は
+   必ず captured_at の範囲か最新時刻の一致で絞ること（全件を読むと遅く、Turso の枠も減る）
 10. ヨルシカのサイトも Cloudflare に移す（画像最適化をやめる修正とセットで）
 11. Cloudflare Web Analytics を有効にする（Vercel Analytics を外したため、今は計測なし）
 12. デプロイを GitHub Actions（Linux）から自動化する（今は手元から `npm run deploy`）
