@@ -12,6 +12,10 @@
   "workers_dev": false,
   "preview_urls": false,
 
+  // 独自ドメインで公開する。DNS の行は Cloudflare が自動で作る
+  // （同じ名前の行が既にあると失敗するので、Vercel 向けの CNAME は削除済み）
+  "routes": [{ "pattern": "stream-trends.sukinote.com", "custom_domain": true }],
+
   // JS・CSS・public の画像などの静的ファイル。ここへのリクエストは無料・無制限
   "assets": {
     "directory": ".open-next/assets",

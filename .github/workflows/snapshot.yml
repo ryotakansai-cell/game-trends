@@ -1,10 +1,9 @@
 name: Twitchスナップショット収集
 
 on:
-  schedule:
-    # 毎時23分。「0分」は世界中のジョブが集中してGitHub側で
-    # 遅延・スキップされやすいため、あえて半端な時刻にしている
-    - cron: "23 * * * *"
+  # 定期実行は Cloudflare Workers の Cron Triggers（cron-worker/）に移した。
+  # GitHub の schedule は混雑時に飛ばされ、毎時のはずが4〜6時間おきだったため。
+  # ここは手動で1回だけ収集したいとき用に残している
   workflow_dispatch:
 
 jobs:

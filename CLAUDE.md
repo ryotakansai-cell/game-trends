@@ -6,8 +6,8 @@ Twitch・YouTube Liveの配信ランキングサイト。将来的に他プラ�
 表示名は「配信トレンド」（`lib/site.ts` の `SITE_NAME`）。リポジトリ名は
 game-trends のままだが、中身は配信者・配信が主役でゲームは従なので表示名とURLを寄せた。
 
-- 本番: https://stream-trends.sukinote.com
-- 旧URL: https://game-trends-psi.vercel.app（Vercelの既定ドメイン。新URLへ転送する）
+- 本番: https://stream-trends.sukinote.com（Cloudflare Workers）
+- 旧URL: https://game-trends-psi.vercel.app（Vercel。アカウント停止中で開けない）
 - リポジトリ: https://github.com/ryotakansai-cell/game-trends
 
 ### ドメイン
@@ -15,11 +15,28 @@ game-trends のままだが、中身は配信者・配信が主役でゲーム�
 `sukinote.com`（好きノート）を Cloudflare Registrar で取得し、作ったサイトを
 サブドメインで並べる（`stream-trends.` / `yorushika.`）。サイトごとにドメインを
 買うと年額が積み上がるため1つにまとめた。名前に本名を入れないのは、一般の人に
-作者の名前を見せないため。DNSは Cloudflare に CNAME を1行（Proxyは灰色の
-DNS only。オレンジだとVercelの証明書発行とぶつかる）。
+作者の名前を見せないため。
 
-URLを変えるときは、GitHub Secrets の `SITE_URL` を**先に**変えてから旧URLの転送を
-入れる。cronの curl は転送を追わないので、逆順だとエラーにならずに収集が止まる。
+`stream-trends.sukinote.com` は Worker の Custom Domain（`wrangler.jsonc` の
+`routes`）。DNS の行は Cloudflare が自動で作るので手で書かない。同じ名前の行が
+既にあるとデプロイが失敗する。
+
+### ホスティング（Vercel → Cloudflare Workers に移した経緯）
+
+2026-10 に Vercel Hobby がアカウントごと30日停止した（画像最適化の変換が上限
+5,000回の215%）。公式ドキュメントには「超えても新しい画像の最適化が止まるだけ」と
+あったが、実際は全サイト停止だった。Hobby は数える項目が多く、どれか1つを超えると
+全サイトが30日止まる。サイトを増やすほどその崖に近づくので、Cloudflare Workers の
+有料プラン（月$5。アカウント単位で何サイトでも同額）に移した。
+
+- 超えても止まらず従量課金（リクエスト100万回 $0.30、CPU 100万ms $0.02）。
+  上限で止める機能は無いので、予算アラートを $1 で設定してある
+- 無料プランは CPU が1回10msで、Next.js のページ組み立てが収まらない（エラー1102）
+- Next.js は OpenNext（`@opennextjs/cloudflare`）で変換して動かす。Vercel ほど
+  そのままは動かないので、更新時は `npm run preview` で手元確認してから出す
+- 画像最適化は使わない（`next.config.ts` の `images.unoptimized`）。Twitch の
+  アイコンは配信元の 70x70 版を使う（`getUsersByLogin`）
+- `*.workers.dev` の既定URLは無効（アカウントのサブドメインに本名が入るため）
 
 ## 作者について
 
@@ -37,8 +54,8 @@ URLを変えるときは、GitHub Secrets の `SITE_URL` を**先に**変えて�
 | スタイル       | Tailwind CSS v4                       |
 | コード整形     | Prettier（保存時に自動整形）          |
 | DB             | Turso (libSQL/SQLite)                 |
-| ホスティング   | Vercel (Hobbyプラン)                  |
-| 定期実行       | GitHub Actions                        |
+| ホスティング   | Cloudflare Workers 有料（OpenNext）   |
+| 定期実行       | Cloudflare Cron Triggers              |
 | 外部API        | Twitch Helix API、YouTube Data API v3 |
 
 ## ディレクトリ構成
@@ -75,6 +92,9 @@ scripts/
 ├── links-add.mjs               URL直指定で手動紐付け（channels.list 1ユニット）
 ├── links-rename.mjs            creatorの表示名を直す
 └── link-core.mjs               紐付け処理の共通部品（confirm / add で共用）
+cron-worker/                    毎時の収集APIを呼ぶだけの Worker（Cron Triggers。サイトとは別にデプロイ）
+wrangler.jsonc                  サイト本体の Worker 設定（Custom Domain、R2 バインディング）
+open-next.config.ts             OpenNext の設定（fetch の作り置きを R2 に置く）
 ```
 
 ## 設計上の決定と、その理由
@@ -122,14 +142,18 @@ YouTubeの1日の枠の配分。cronはサイトの本体機能なので最優�
 
 名寄せを回すときはこの2,750を超えないこと。超えるとcronが落ちて
 ランキングのデータが欠ける。作業は日をまたいで分割する。
+この枠はヨルシカのサイトと同じキーで共有している（ヨルシカ側は1日数ユニット）。
 
-定期実行はVercel CronではなくGitHub Actionsを使う。
-Vercel Hobbyプランのcronは1日1回しか実行できないため。
+定期実行は Cloudflare の Cron Triggers（`cron-worker/`）から収集APIを叩く。
+以前は GitHub Actions の schedule だったが、混雑時に実行が飛ばされ、毎時の
+はずが実際は4〜6時間おきだった（2026-10 に実行履歴とDBで確認）。Cron Triggers は
+時刻どおりに動く。`cron-worker` は転送(3xx)を失敗として扱う（転送を追わずに
+「成功したのに保存されない」状態になるのを防ぐ）。GitHub Actions の2つの
+ワークフローは手動実行用にだけ残してある。
 
-公開リポジトリは60日間コミットが無いと schedule が通知なしで止まる。
-`keepalive.yml` が毎週見て、最後のコミットから45日たっていたら空コミットを入れる。
-開発中は何もしない（毎月決め打ちにすると、そのたびにVercelが作り直すため）。
-ヨルシカ側はボットがほぼ毎日データ更新をコミットするので不要。
+ページは `searchParams` を読むため、ビルド結果で `ƒ`（表示のたびに組み立てる）に
+なる。`revalidate` を書いていてもページ全体の作り置きにはならない。
+Twitch の fetch は `next.revalidate` 付きなので、その返事だけが R2 に作り置きされる。
 
 `page.tsx` から自分のAPIルートをfetchしない。Server Componentなので
 `lib/` の関数を直接呼ぶ。トップページはTwitch（API直叩き）とYouTube
@@ -178,11 +202,24 @@ YOUTUBE_API_KEY
 CRON_SECRET
 ```
 
-変更時は `.env.local` / Vercel / GitHub Secrets の3箇所を更新し、
-**Vercelは必ずRedeployする**（環境変数はビルド時に読まれるため）。
-※ `YOUTUBE_API_KEY` / `TURSO_*` はcronの中でVercel上でのみ使われるため、
-GitHub Secretsへの追加は不要（GitHub Actions自身はSITE_URLをcurlで
-叩くだけで、DBやAPIキーには触れない）。
+本番の値は Cloudflare の Worker の Secret に置く。`.env.local` を変えたら、
+プロジェクトのフォルダで `npx wrangler secret bulk .env.local` を実行すれば
+まとめて反映される（値は表示されない。Secret の変更は即時反映でビルド不要）。
+`cron-worker` には `CRON_SECRET` だけを、`cron-worker` フォルダで
+`npx wrangler secret put CRON_SECRET` で入れる（フォルダを間違えるとサイト側に入る）。
+GitHub Secrets（`CRON_SECRET` / `SITE_URL`）は手動実行のワークフロー用。
+
+## デプロイ
+
+```
+npm run preview   手元で Cloudflare と同じ環境（workerd）で動かして確認する
+npm run deploy    OpenNext でビルドして本番にデプロイする（stream-trends.sukinote.com）
+cd cron-worker && npm run deploy   cron の Worker をデプロイする
+```
+
+Windows では OpenNext のビルドがシンボリックリンクを作るため、Windows の
+「開発者モード」をオンにしておく必要がある（設定 → システム → 詳細設定）。
+Vercel は GitHub と連携したままなので push すると動くが、アカウント停止中で無関係。
 
 ## 名寄せ（クロスプラットフォームの人物統合）の手順
 
@@ -283,7 +320,13 @@ probeの結果がある人でも検索は妨げないようにするため。
    リンクはAPIで取れないPanelsに置かれているため、優先度は低い
 6. ~~YouTubeの配信者手動登録~~ `links:add` で実装済み
 7. 旧テーブル（`streamers`系/`youtube_streamers`系）の削除（移行が安定したら）
-8. 保存データの間引き（1年以上前は日次の代表値だけ残す）
+8. 保存データの間引き（1年以上前は日次の代表値だけ残す）。2026-10 の実測で
+   1日約0.7MB・年約250MB、Turso の無料枠 5GB に対して約20年もつので急がない
+9. トップと急上昇で、表示のたびに YouTube の `channels.list`（アイコン取得）を
+   呼んでいる。枠の節約のため、アイコンを作り置きする（fetch に revalidate を付ける等）
+10. ヨルシカのサイトも Cloudflare に移す（画像最適化をやめる修正とセットで）
+11. Cloudflare Web Analytics を有効にする（Vercel Analytics を外したため、今は計測なし）
+12. デプロイを GitHub Actions（Linux）から自動化する（今は手元から `npm run deploy`）
 
 ## 方針
 
