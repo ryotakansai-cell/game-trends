@@ -7,6 +7,11 @@
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
 
+  // 公開URLは stream-trends.sukinote.com だけにする。*.workers.dev の既定URLは
+  // アカウントのサブドメイン（本名を含む）が出るのと、入口が増えるだけなので作らない
+  "workers_dev": false,
+  "preview_urls": false,
+
   // JS・CSS・public の画像などの静的ファイル。ここへのリクエストは無料・無制限
   "assets": {
     "directory": ".open-next/assets",
