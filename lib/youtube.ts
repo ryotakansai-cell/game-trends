@@ -1,4 +1,5 @@
 import { getDbClient } from "@/lib/db";
+import { pastWindow } from "@/lib/snapshot-range";
 import type { PlatformAccount, PlatformContent } from "@/lib/platform";
 
 const YOUTUBE_API = "https://www.googleapis.com/youtube/v3";
@@ -165,7 +166,12 @@ export async function getChannelIcons(
         id: chunk.join(","),
         key: apiKey,
       });
-      const res = await fetch(`${YOUTUBE_API}/channels?${params}`);
+      // トップ・急上昇・クリエイターページの表示のたびに呼ばれるので、返事を1日作り置きする。
+      // 作り置きが無いと表示1回で1ユニット減り、毎時の cron（1日約7,250）と合わせて
+      // 1日1万の枠を超えかねない。アイコンはめったに変わらないので1日で十分
+      const res = await fetch(`${YOUTUBE_API}/channels?${params}`, {
+        next: { revalidate: 86400 },
+      });
       const json = await res.json();
       if (json.error) return;
 
@@ -189,27 +195,30 @@ export async function getTopYouTubeLive(
   const db = getDbClient();
 
   const sql = `
-    -- live_snapshots は全プラットフォーム混在なので、YouTube分だけに絞る
-    WITH yt AS (
-      SELECT l.*
-      FROM live_snapshots l
-      JOIN accounts a ON a.id = l.account_id
-      WHERE a.platform = 'youtube'
-    )
-    -- 列名は移行前と同じにする（呼び出し側は変更不要）
+    -- 最新の収集に含まれる YouTube の配信だけを読む。
+    -- 最新の時刻は captured_at の索引を新しい順にたどって最初の YouTube の行で止める
+    -- （以前は YouTube の全履歴から MAX を取っていた）
     SELECT
-      s.content_id AS video_id,
-      s.title,
-      s.viewers,
-      s.region,
+      -- 列名は移行前と同じにする（呼び出し側は変更不要）
+      l.content_id AS video_id,
+      l.title,
+      l.viewers,
+      l.region,
       a.platform_id AS channel_id,
       a.display_name AS channel_title
-    FROM yt s
-    JOIN accounts a ON a.id = s.account_id
-    -- 「最新バッチ」の判定もYouTube分だけで行う
-    WHERE s.captured_at = (SELECT MAX(captured_at) FROM yt)
-      ${region ? "AND s.region = ?" : ""}
-    ORDER BY s.viewers DESC
+    FROM live_snapshots l
+    JOIN accounts a ON a.id = l.account_id
+    WHERE a.platform = 'youtube'
+      AND l.captured_at = (
+        SELECT l2.captured_at
+        FROM live_snapshots l2
+        JOIN accounts a2 ON a2.id = l2.account_id
+        WHERE a2.platform = 'youtube'
+        ORDER BY l2.captured_at DESC
+        LIMIT 1
+      )
+      ${region ? "AND l.region = ?" : ""}
+    ORDER BY l.viewers DESC
     LIMIT ?
   `;
   const args = region ? [region, limit] : [limit];
@@ -243,43 +252,55 @@ export async function getRisingYouTubeLive(
 ): Promise<RisingYouTubeChannel[]> {
   const db = getDbClient();
 
+  // 24時間前の前後6時間だけを読む（全履歴を読まないため。lib/snapshot-range.ts）。
+  // YouTubeはキーワードローテーションで記録が飛び飛びになるので、Twitch(3時間)より広く取る
+  const [pastFrom, pastTo] = pastWindow(6);
+
   const sql = `
-    -- ⓪ live_snapshots は全プラットフォーム混在なので、YouTube分だけに絞る
-    WITH yt AS (
-      SELECT l.*
+    -- ⓪ YouTube の最新の収集時刻（索引を新しい順にたどって最初の行で止める）
+    WITH latest_at AS (
+      SELECT l.captured_at AS at
       FROM live_snapshots l
       JOIN accounts a ON a.id = l.account_id
       WHERE a.platform = 'youtube'
+      ORDER BY l.captured_at DESC
+      LIMIT 1
     ),
 
-    -- ① チャンネルごとに「一番新しい記録」を特定する
+    -- ① 最新の収集に含まれているチャンネル（＝最後の観測時点で配信中）
     latest AS (
       SELECT
-        account_id,
-        content_id,
-        title AS video_title,
-        region,
-        viewers AS current_viewers,
-        captured_at AS current_at,
+        l.account_id,
+        l.content_id,
+        l.title AS video_title,
+        l.region,
+        l.viewers AS current_viewers,
+        l.captured_at AS current_at,
         -- 同じ時刻に複数の動画を配信している場合は、視聴者が多い方を採用
         ROW_NUMBER() OVER (
-          PARTITION BY account_id
-          ORDER BY captured_at DESC, viewers DESC
+          PARTITION BY l.account_id
+          ORDER BY l.viewers DESC
         ) AS rn
-      FROM yt
+      FROM live_snapshots l
+      JOIN accounts a ON a.id = l.account_id
+      WHERE l.captured_at = (SELECT at FROM latest_at)
+        AND a.platform = 'youtube'
     ),
 
-    -- ② チャンネルごとに「24時間前に一番近い記録」を特定する
+    -- ② チャンネルごとに「24時間前に一番近い記録」を特定する（前後6時間に絞ってある）
     past AS (
       SELECT
-        account_id,
-        viewers AS past_viewers,
-        captured_at AS past_at,
+        l.account_id,
+        l.viewers AS past_viewers,
+        l.captured_at AS past_at,
         ROW_NUMBER() OVER (
-          PARTITION BY account_id
-          ORDER BY ABS(strftime('%s', captured_at) - strftime('%s', 'now', '-24 hours')), viewers DESC
+          PARTITION BY l.account_id
+          ORDER BY ABS(strftime('%s', l.captured_at) - strftime('%s', 'now', '-24 hours')), l.viewers DESC
         ) AS rn
-      FROM yt
+      FROM live_snapshots l
+      JOIN accounts a ON a.id = l.account_id
+      WHERE a.platform = 'youtube'
+        AND l.captured_at BETWEEN ? AND ?
     )
 
     -- ③ ①と②を突き合わせて増加率を計算する
@@ -303,19 +324,15 @@ export async function getRisingYouTubeLive(
       AND p.past_viewers > 0
       -- 増えている人だけ（急上昇ページなので、減っている人は載せない）
       AND l.current_viewers > p.past_viewers
-      -- 21600秒 = 6時間。YouTubeはキーワードローテーションのため記録が
-      -- 飛び飛びになるので、Twitch(3時間)より広く取る
-      AND ABS(strftime('%s', p.past_at) - strftime('%s', 'now', '-24 hours')) < 21600
-      -- 最新の収集バッチに含まれている人だけ（＝最後の観測時点で配信中）。
-      -- ★MAXもYouTube分だけで取る（全体のMAXだとTwitchのcron後に0件になる）
-      AND l.current_at = (SELECT MAX(captured_at) FROM yt)
       ${region ? "AND l.region = ?" : ""}
     ORDER BY growth_rate DESC
     LIMIT ?
   `;
 
   // ?の数に合わせて渡す値を変える。順番はSQL内の ? の出現順と一致させる
-  const args = region ? [minViewers, region, limit] : [minViewers, limit];
+  const args = region
+    ? [pastFrom, pastTo, minViewers, region, limit]
+    : [pastFrom, pastTo, minViewers, limit];
 
   const result = await db.execute({ sql, args });
   return result.rows as unknown as RisingYouTubeChannel[];
@@ -350,7 +367,10 @@ export async function getRecentUploads(
     key: apiKey,
   });
 
-  const res = await fetch(`${YOUTUBE_API}/playlistItems?${params}`);
+  // クリエイターページの表示のたびに呼ばれるので、1時間作り置きする（枠の節約）
+  const res = await fetch(`${YOUTUBE_API}/playlistItems?${params}`, {
+    next: { revalidate: 3600 },
+  });
   const json = await res.json();
 
   // 非公開チャンネルなどで取れないことがある。
@@ -384,6 +404,9 @@ async function getLiveByAccountIds(accountIds: number[]) {
   const db = getDbClient();
   // IN (?, ?, ?) の ? を件数ぶん作る
   const placeholders = accountIds.map(() => "?").join(",");
+  // 2時間以上前の記録なら、もう配信は終わっているとみなす。
+  // 以前は対象アカウントの全履歴を読んでから2時間で絞っていたので、先に範囲で絞る
+  const since = new Date(Date.now() - 2 * 3600 * 1000).toISOString();
 
   const result = await db.execute({
     sql: `
@@ -394,14 +417,13 @@ async function getLiveByAccountIds(accountIds: number[]) {
           ) AS rn
         FROM live_snapshots
         WHERE account_id IN (${placeholders})
+          AND captured_at >= ?
       )
       SELECT account_id, title, viewers, content_id
       FROM recent
       WHERE rn = 1
-        -- 2時間以上前の記録なら、もう配信は終わっているとみなす
-        AND strftime('%s', 'now') - strftime('%s', captured_at) < 7200
     `,
-    args: accountIds,
+    args: [...accountIds, since],
   });
 
   for (const r of result.rows) {
@@ -437,7 +459,10 @@ async function fetchVideoStats(
         id: chunk.join(","),
         key: apiKey,
       });
-      const res = await fetch(`${YOUTUBE_API}/videos?${params}`);
+      // 最近の動画の再生数。表示のたびに呼ばれるので1時間作り置きする（枠の節約）
+      const res = await fetch(`${YOUTUBE_API}/videos?${params}`, {
+        next: { revalidate: 3600 },
+      });
       const json = await res.json();
       if (json.error) return; // 取れなくても再生数0として扱い、表示は続ける
 

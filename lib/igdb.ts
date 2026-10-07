@@ -107,6 +107,10 @@ export async function getGameDetails(
       Accept: "application/json",
     },
     body: `fields slug,genres.name,first_release_date,rating,rating_count,websites.url,websites.type; where id = ${id};`,
+    // ゲームの発売日やジャンルはほぼ変わらないので1日作り置きする。
+    // POST は既定では作り置きされないので force-cache で明示する
+    cache: "force-cache",
+    next: { revalidate: 86400 },
   });
 
   if (!res.ok) return null;

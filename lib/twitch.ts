@@ -1,6 +1,7 @@
 // DBを読むために、lib/db.ts の接続関数を借りてくる。
 // （このファイルで唯一、Twitch APIではなく自前のDBを見る処理のために使う）
 import { getDbClient } from "@/lib/db";
+import { pastWindow } from "@/lib/snapshot-range";
 import type { PlatformAccount, PlatformContent } from "@/lib/platform";
 
 const TOKEN_URL = "https://id.twitch.tv/oauth2/token";
@@ -28,13 +29,18 @@ function getCredentials() {
 let cachedToken: { value: string; expiresAt: number } | null = null;
 
 async function getAccessToken() {
-  // 期限内ならそのまま使い回す（5分の余裕を見て失効扱いにする）
+  // 同じ実行環境の中では、1時間は変数のトークンをそのまま使う
   if (cachedToken && Date.now() < cachedToken.expiresAt) {
     return cachedToken.value;
   }
 
   const { clientId, clientSecret } = getCredentials();
 
+  // トークンの返事も1日作り置きする（Cloudflare では R2 に置かれ、全実行環境で共有される）。
+  // Workers は実行環境が入れ替わるたびに上の変数が空になり、そのたびに別のトークンを
+  // 取り直していた。fetch の作り置きは Authorization ヘッダーも見分けに使うので、
+  // トークンが変わると Twitch API の作り置きも全部別物扱いになって効かなくなる。
+  // アプリ用トークンの有効期限は約60日あるので、1日の作り置きなら期限切れにならない
   const res = await fetch(TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -43,7 +49,9 @@ async function getAccessToken() {
       client_secret: clientSecret,
       grant_type: "client_credentials",
     }),
-    cache: "no-store",
+    // POST は既定では作り置きされないので、force-cache で明示する
+    cache: "force-cache",
+    next: { revalidate: 86400 },
   });
 
   if (!res.ok) throw new Error(`トークン取得に失敗: ${res.status}`);
@@ -52,8 +60,9 @@ async function getAccessToken() {
 
   cachedToken = {
     value: json.access_token as string,
-    // expires_in は秒。5分(300秒)早めに失効させて、期限ぎりぎりの失敗を避ける
-    expiresAt: Date.now() + (Number(json.expires_in ?? 3600) - 300) * 1000,
+    // 作り置きから返ってきた場合、expires_in は発行時点の値なので当てにならない。
+    // 1時間ごとに作り置きを読み直す（R2 を読むだけなので安い）
+    expiresAt: Date.now() + 3600 * 1000,
   };
   return cachedToken.value;
 }
@@ -392,43 +401,51 @@ export async function getRisingStreamers(
 ): Promise<RisingStreamer[]> {
   const db = getDbClient();
 
+  // 24時間前の前後3時間だけを読む（全履歴を読まないため。lib/snapshot-range.ts）
+  const [pastFrom, pastTo] = pastWindow(3);
+
   const sql = `
-    -- ⓪ live_snapshots は全プラットフォーム混在なので、まずTwitch分だけに絞る。
-    --    これを下の3箇所から使い回す（同じJOINを何度も書かないため）
-    WITH twitch_snapshots AS (
-      SELECT l.*
+    -- ⓪ Twitch の最新の収集時刻。captured_at の索引を新しい順にたどり、
+    --    最初に見つかった Twitch の行で止まるので、全履歴を読まずに済む
+    WITH latest_at AS (
+      SELECT l.captured_at AS at
       FROM live_snapshots l
       JOIN accounts a ON a.id = l.account_id
       WHERE a.platform = 'twitch'
+      ORDER BY l.captured_at DESC
+      LIMIT 1
     ),
 
-    -- ① 配信者ごとに「一番新しい記録」を特定する
+    -- ① 最新の収集に含まれている配信者（＝最後の観測時点で配信中）。
+    --    cron は1回分を同じ captured_at で保存するので、一致で取れる
     latest AS (
       SELECT
-        account_id,
-        viewers AS current_viewers,
-        title,
-        captured_at AS current_at,
-        -- 配信者ごと(PARTITION BY)に、新しい順(DESC)で 1,2,3... と採番
-        ROW_NUMBER() OVER (
-          PARTITION BY account_id
-          ORDER BY captured_at DESC
-        ) AS rn
-      FROM twitch_snapshots
+        l.account_id,
+        l.viewers AS current_viewers,
+        l.title,
+        l.captured_at AS current_at
+      FROM live_snapshots l
+      JOIN accounts a ON a.id = l.account_id
+      WHERE l.captured_at = (SELECT at FROM latest_at)
+        AND a.platform = 'twitch'
     ),
 
-    -- ② 配信者ごとに「24時間前に一番近い記録」を特定する
+    -- ② 配信者ごとに「24時間前に一番近い記録」を特定する。
+    --    範囲は前後3時間に絞ってある（それより遠い記録は比較に使わないため）
     past AS (
       SELECT
-        account_id,
-        viewers AS past_viewers,
-        captured_at AS past_at,
+        l.account_id,
+        l.viewers AS past_viewers,
+        l.captured_at AS past_at,
         -- 「24時間前からのズレ（秒）」が小さい順に採番
         ROW_NUMBER() OVER (
-          PARTITION BY account_id
-          ORDER BY ABS(strftime('%s', captured_at) - strftime('%s', 'now', '-24 hours'))
+          PARTITION BY l.account_id
+          ORDER BY ABS(strftime('%s', l.captured_at) - strftime('%s', 'now', '-24 hours'))
         ) AS rn
-      FROM twitch_snapshots
+      FROM live_snapshots l
+      JOIN accounts a ON a.id = l.account_id
+      WHERE a.platform = 'twitch'
+        AND l.captured_at BETWEEN ? AND ?
     )
 
     -- ③ ①と②を突き合わせて、増加率を計算する
@@ -447,24 +464,19 @@ export async function getRisingStreamers(
     FROM latest l
     JOIN past p ON p.account_id = l.account_id AND p.rn = 1
     JOIN accounts a ON a.id = l.account_id
-    WHERE l.rn = 1
-      AND l.current_viewers >= ?
+    WHERE l.current_viewers >= ?
       AND p.past_viewers > 0
       -- 増えている人だけ（急上昇ページなので、減っている人は載せない）
       AND l.current_viewers > p.past_viewers
-      -- 10800秒=3時間。24時間前付近のデータが無い配信者は除外
-      AND ABS(strftime('%s', p.past_at) - strftime('%s', 'now', '-24 hours')) < 10800
-      -- 最新の収集バッチに含まれている人だけ（＝最後の観測時点で配信中）。
-      -- ★live_snapshotsは全プラットフォーム混在なので、MAXもTwitch分だけで取る。
-      --   全体のMAXにすると、YouTubeのcronが後に走った時にTwitch側が0件になる
-      AND l.current_at = (SELECT MAX(captured_at) FROM twitch_snapshots)
       ${language ? "AND a.language = ?" : ""}
     ORDER BY growth_rate DESC
     LIMIT ?
   `;
 
   // ?の数に合わせて渡す値を変える。順番はSQL内の ? の出現順と一致させる
-  const args = language ? [minViewers, language, limit] : [minViewers, limit];
+  const args = language
+    ? [pastFrom, pastTo, minViewers, language, limit]
+    : [pastFrom, pastTo, minViewers, limit];
 
   const result = await db.execute({ sql, args });
   return result.rows as unknown as RisingStreamer[];
