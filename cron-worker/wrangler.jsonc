@@ -5,6 +5,10 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
 
+  // サイト本体も同じ Cloudflare アカウントの Worker になったので、
+  // 同じドメイン内の Worker を fetch で呼べるようにする（無いとエラー1042になる）
+  "compatibility_flags": ["global_fetch_strictly_public"],
+
   // 外から呼べるURL（*.workers.dev）は作らない。時間で動くだけなので不要で、
   // 公開しておくと誰でも叩ける入口が1つ増えるため
   "workers_dev": false,
