@@ -1,10 +1,9 @@
 name: YouTube Liveスナップショット収集
 
 on:
-  schedule:
-    # 毎時38分。Twitch側(23分)ともずらして、同時に待ち行列へ
-    # 入らないようにしている
-    - cron: "38 * * * *"
+  # 定期実行は Cloudflare Workers の Cron Triggers（cron-worker/）に移した。
+  # GitHub の schedule は混雑時に飛ばされ、毎時のはずが4〜6時間おきだったため。
+  # ここは手動で1回だけ収集したいとき用に残している
   workflow_dispatch:
 
 jobs:
