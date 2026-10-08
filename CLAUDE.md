@@ -211,6 +211,11 @@ GitHub Secrets（`CRON_SECRET` / `SITE_URL`）は手動実行のワークフロ�
 
 ## デプロイ
 
+**main に push すると、Cloudflare（Workers Builds）が自動でビルドして本番に出す。**
+ビルドとデプロイのコマンドは `npx opennextjs-cloudflare build` / `deploy`
+（Cloudflare の Worker `stream-trends` → Settings → Build に設定済み）。
+手元から出すこともできる:
+
 ```
 npm run preview   手元で Cloudflare と同じ環境（workerd）で動かして確認する
 npm run deploy    OpenNext でビルドして本番にデプロイする（stream-trends.sukinote.com）
@@ -219,6 +224,7 @@ cd cron-worker && npm run deploy   cron の Worker をデプロイする
 
 Windows では OpenNext のビルドがシンボリックリンクを作るため、Windows の
 「開発者モード」をオンにしておく必要がある（設定 → システム → 詳細設定）。
+cron-worker は自動デプロイの対象外（変更したら手元で `npm run deploy`）。
 Vercel は GitHub と連携したままなので push すると動くが、アカウント停止中で無関係。
 
 ## 名寄せ（クロスプラットフォームの人物統合）の手順
@@ -326,9 +332,9 @@ probeの結果がある人でも検索は妨げないようにするため。
    急上昇の SQL が全履歴を読んでいたのも、時間の範囲で絞るように直した
    （`lib/snapshot-range.ts`）。新しい SQL を書くときも、live_snapshots は
    必ず captured_at の範囲か最新時刻の一致で絞ること（全件を読むと遅く、Turso の枠も減る）
-10. ヨルシカのサイトも Cloudflare に移す（画像最適化をやめる修正とセットで）
+10. ~~ヨルシカのサイトも Cloudflare に移す~~ 移行済み（https://yorushika.sukinote.com）
 11. Cloudflare Web Analytics を有効にする（Vercel Analytics を外したため、今は計測なし）
-12. デプロイを GitHub Actions（Linux）から自動化する（今は手元から `npm run deploy`）
+12. ~~デプロイの自動化~~ Workers Builds で main への push ごとに自動デプロイ
 
 ## 方針
 
