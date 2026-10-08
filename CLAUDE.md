@@ -151,9 +151,13 @@ YouTubeの1日の枠の配分。cronはサイトの本体機能なので最優�
 「成功したのに保存されない」状態になるのを防ぐ）。GitHub Actions の2つの
 ワークフローは手動実行用にだけ残してある。
 
-ページは `searchParams` を読むため、ビルド結果で `ƒ`（表示のたびに組み立てる）に
-なる。`revalidate` を書いていてもページ全体の作り置きにはならない。
-Twitch の fetch は `next.revalidate` 付きなので、その返事だけが R2 に作り置きされる。
+トップ・急上昇・各詳細ページは `searchParams` / `params` を読むため `ƒ`（表示のたびに
+組み立てる）。外部APIの返事は fetch の `next.revalidate` で R2 に作り置きされる。
+`/games`・`/creators`・`/sitemap.xml` は `○`（ビルド時に作り、5分ごとに作り直す）。
+この3つは**ビルド時に Twitch API と DB を読む**ので、Workers Builds の
+「Build variables」に `TWITCH_CLIENT_*` と `TURSO_*` を入れてある（無いとビルドが失敗する）。
+Twitch のトークン取得を作り置き（force-cache）にしたことで `ƒ` から `○` に変わった
+（以前は no-store だったので、トークンを使うページが全部 `ƒ` になっていた）。
 
 `page.tsx` から自分のAPIルートをfetchしない。Server Componentなので
 `lib/` の関数を直接呼ぶ。トップページはTwitch（API直叩き）とYouTube
