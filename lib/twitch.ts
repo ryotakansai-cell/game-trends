@@ -375,6 +375,31 @@ export async function getTopStreamsPaged(pages = 8) {
   return streams;
 }
 
+/** 日本語の配信を、視聴者数の多い順に minViewers 人以上のところまで全部取得する。
+ *  全世界の上位800だと日本の配信はほとんど入らず、新人も記録されないため。
+ *  2026-10 の実測（日本時間22時台）で10人以上は約1,600配信、APIは約20回。
+ *  Twitch API の上限は1分800回で、使った分はすぐ回復するので毎時でも余裕がある */
+export async function getJapaneseStreams(minViewers = 10, maxPages = 50) {
+  const streams: TwitchStreamFull[] = [];
+  let cursor: string | undefined = undefined;
+
+  for (let i = 0; i < maxPages; i++) {
+    const page: { data: TwitchStreamFull[]; cursor?: string } =
+      await helixPage<TwitchStreamFull>(
+        "/streams?language=ja&first=100",
+        cursor,
+      );
+    streams.push(...page.data);
+
+    // 視聴者数の多い順に返ってくるので、下限を割ったらそれ以降は読まなくてよい
+    const last = page.data.at(-1);
+    if (!page.cursor || !last || last.viewer_count < minViewers) break;
+    cursor = page.cursor;
+  }
+
+  return streams.filter((s) => s.viewer_count >= minViewers);
+}
+
 /** 指定したユーザーIDのうち、今配信中の人の配信を取得する（配信していない人は返らない）。
  *  名寄せ済みの配信者は、上位800配信に入っていない時間帯も記録したいので直接問い合わせる。
  *  上位800位の線は、日本の深夜で200〜570人まで下がる（2026-10 の実測） */
@@ -417,7 +442,7 @@ export type RisingStreamer = {
 
 /** 24時間前と比べて視聴者数が伸びている配信者を取得する */
 export async function getRisingStreamers(
-  minViewers = 200, // 収集自体が上位800配信（＝200人以上）なので実質すべてが対象
+  minViewers = 200, // 日本語の配信は10人以上も記録しているので、小さな配信の上下動で埋まらないよう絞る
   limit = 20, // 何件返すか
   language?: string, // "ja"を渡すと日本語配信だけ。省略すると全言語
 ): Promise<RisingStreamer[]> {

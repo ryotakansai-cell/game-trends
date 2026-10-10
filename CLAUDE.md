@@ -71,7 +71,8 @@ app/
 ├── streamers/[login]/page.tsx  配信者ページ（Twitch単体。クリップ・アーカイブ）
 └── api/
     ├── cron/snapshot/route.ts        Twitch: 毎時DBに保存（games/snapshots、accounts/live_snapshots）
-    └── cron/youtube-snapshot/route.ts YouTube: 毎時DBに保存（accounts/live_snapshots）
+    ├── cron/youtube-snapshot/route.ts YouTube: 毎時DBに保存（accounts/live_snapshots、監視リスト）
+    └── cron/daily/route.ts           毎日: 前日分を daily_stats にまとめ、90日より古い毎時の記録を消す
 components/
 ├── SiteHeader.tsx              全ページ共通のヘッダー（ホーム + 下線ナビ）
 ├── PageHeader.tsx              各ページの見出し（紫の小さな英字 + 白い見出し + 右上に地域 + 下に絞り込み）
@@ -84,8 +85,11 @@ lib/
 ├── youtube.ts                  YouTube Data API v3との通信 + DBからのランキング読み取り
 ├── platform.ts                 プラットフォーム共通の型（PlatformContent など）。処理は書かない
 ├── creators.ts                 人物とアカウントのDB読み取り、各libへの振り分け
-└── db.ts                       Turso接続（読み書き共通の1関数のみ。RLS相当の分離は不要）
+├── daily-stats.ts              日ごとの集計（まとめる・古い記録を消す）
+├── snapshot-range.ts           live_snapshots を時刻の範囲で絞る部品、日本時間の日付
+└── db.ts                       Turso接続（読み書き共通の1関数）と、大量書き込みを500件ずつに分ける部品
 scripts/
+├── db-migrate.mjs              npm run db:migrate（2026-10 以降に足した表を作る。何度実行しても安全）
 ├── test-cron.mjs               ローカル/本番のcronエンドポイントを手軽に叩くテスト用スクリプト
 ├── links-probe.mjs             Twitchのloginをハンドル(@xxx)として引く（1人1ユニット）
 ├── suggest-links.mjs           名寄せ候補をYouTube検索で集める（1人100ユニット）
@@ -95,7 +99,7 @@ scripts/
 ├── links-add.mjs               URL直指定で手動紐付け（channels.list 1ユニット）
 ├── links-rename.mjs            creatorの表示名を直す
 └── link-core.mjs               紐付け処理の共通部品（confirm / add で共用）
-cron-worker/                    毎時の収集APIを呼ぶだけの Worker（Cron Triggers。サイトとは別にデプロイ）
+cron-worker/                    毎時の収集・毎日の集計のAPIを呼ぶだけの Worker（Cron Triggers。サイトとは別にデプロイ）
 wrangler.jsonc                  サイト本体の Worker 設定（Custom Domain、R2 バインディング）
 open-next.config.ts             OpenNext の設定（fetch の作り置きを R2 に置く）
 ```
@@ -122,6 +126,27 @@ self（本人）/ clip（切り抜き）/ archive（アーカイブ）を区別�
 まだ削除していない。`games` / `snapshots` はTwitch専用のゲームランキング用で、
 これは移行しない。
 
+**毎時の記録は90日だけ残し、それより前は日ごとの集計だけにする。**
+`daily_stats`（アカウント×日本時間の日で1行：最高・平均同接、配信時間、一番遊んだゲーム）を
+毎日 `cron/daily` が作り、その後で90日より古い `live_snapshots` を消す。
+必ず「まとめてから消す」順で、集計が消す範囲まで済んでいなければ消さない（`lib/daily-stats.ts`）。
+配信者の統計やグラフは `daily_stats` から読む（読む行数が毎時の記録の数分の一で済む）。
+間引き（古い毎時の記録を一部だけ残す）にしなかったのは、統計に必要な値は集計に全部あり、
+残しても使い道が無いため。
+
+**分析の対象は名寄せと切り離す。** 名寄せは同じ人の複数アカウントを1ページにまとめる役で、
+同接・配信時間などの統計はアカウント単位で全員分を出す。そのため収集は広く取っている：
+
+- Twitch：全世界の上位800配信 ＋ 日本語の配信は10人以上を全部（`getJapaneseStreams`。
+  日本時間22時台で約1,600配信・API約20回。Twitch API の上限は1分800回で余裕がある）
+  ＋ それでも漏れた名寄せ済みの人を `streams?user_id=` で直接
+- YouTube：キーワード検索（新しい配信者を見つける入口）＋ 監視リスト（`youtube_watch`）の
+  RSS。日本向けの検索で2日以上見つかり、30日以内に配信したチャンネルと、
+  名寄せ済みの本人チャンネルが対象（2026-10 時点で約1,200）。新人も自動で入る
+
+毎時の書き込みは2,000行を超えるので、名前などが前回と同じならアカウントを上書きしない
+（UPSERT の末尾の `WHERE ... IS NOT excluded...`）。Turso の書き込み枠は月1,000万行。
+
 表示側はプラットフォームごとの違いを `lib/platform.ts` の `PlatformContent` という
 共通の型に吸収する。ツイキャスを足すときは `lib/twitcasting.ts` に同じ形を返す関数を
 1つ書き、`lib/creators.ts` の振り分けに数行足すだけで、ページ側は変更不要。
@@ -134,26 +159,30 @@ YouTubeは Twitch と仕組みが違う。「今ライブ中の一覧」を取�
 `JP_LIVE_KEYWORDS` / `GLOBAL_LIVE_KEYWORDS` / `pickKeyword`）。`videos.list` は
 一度に指定できる動画IDが50件までなので分割して呼ぶ。
 
-キーワード検索だけでは名寄せ済みの配信者がほとんど拾えない（2026-10 の実測で、
-YouTube 本人アカウントを持つ93人のうち記録があったのは5人）。そこで cron は
-名寄せ済みの本人チャンネルの RSS（無料・枠を使わない）から直近7日の動画IDを集め、
-検索結果と一緒に `videos.list` で配信中か確かめている（`getRecentVideoIdsFromFeeds`）。
-Twitch も同じ理由で、上位800配信の圏外にいる名寄せ済みの人を `streams?user_id=` で
-直接確かめている（実測で、ある1時間に98人中37人が圏外で配信していた）。
+キーワード検索だけでは同じ配信者を毎時拾えない（2026-10 の実測で、YouTube 本人アカウントを
+持つ名寄せ済み93人のうち記録があったのは5人）。そこで監視リストのチャンネルは
+RSS（チャンネルごとの最新15本の動画一覧。公開ファイルなので枠を使わない）から直近7日の
+動画IDを集め、`videos.list` で配信中か確かめている（`getRecentVideoIdsFromFeeds` / `checkVideos`）。
+7日にしているのは、予約枠を前もって作る配信者がいて、配信中でも公開日時が最大5日前だったため。
+一度確かめて「普通の動画・配信終了」だった動画は `youtube_video_checks` に覚え、二度と確かめない
+（配信のたびに新しい動画IDが振られるので、新しい配信は必ず「初めて見るID」になる）。
+覚えないと毎時8,000本以上を確かめることになり、それだけで1日の枠を超える。
+RSS は Cloudflare の同時接続の上限（6本）に合わせて6件ずつ読む。2026-10 に Cloudflare 上で
+783チャンネルを2回続けて読み、全件成功・約30秒だった。返り値の `feed_failed` が増えたら弾かれている。
 cron は `?dryRun=1` を付けると保存せずに件数だけ返す（`npm run test:cron -- "snapshot?dryRun=1"`）。
 
 YouTubeの1日の枠の配分。cronはサイトの本体機能なので最優先で確保する。
 
 ```
 10,000  1日の無料枠
--7,500  cron（毎時 検索300 + videos.list 約12 × 24回）
+-7,600  cron（毎時 検索300 + videos.list 約15 × 24回。見込みなので実測で直す）
 ──────
- 2,500  名寄せなどに自由に使える分
+ 2,400  名寄せなどに自由に使える分
 ```
 
-videos.list の回数は、名寄せ済みの人が増えるほど増える（RSS の候補 約500件で12回）。
+videos.list の回数は、監視リストの人数と「配信予定・配信中」の動画の数で増える。
 
-名寄せを回すときはこの2,500を超えないこと。超えるとcronが落ちて
+名寄せを回すときはこの2,400を超えないこと。超えるとcronが落ちて
 ランキングのデータが欠ける。作業は日をまたいで分割する。
 この枠はヨルシカのサイトと同じキーで共有している（ヨルシカ側は1日数ユニット）。
 
@@ -368,8 +397,8 @@ probeの結果がある人でも検索は妨げないようにするため。
    リンクはAPIで取れないPanelsに置かれているため、優先度は低い
 6. ~~YouTubeの配信者手動登録~~ `links:add` で実装済み
 7. 旧テーブル（`streamers`系/`youtube_streamers`系）の削除（移行が安定したら）
-8. 保存データの間引き（1年以上前は日次の代表値だけ残す）。2026-10 の実測で
-   1日約0.7MB・年約250MB、Turso の無料枠 5GB に対して約20年もつので急がない
+8. ~~保存データの間引き~~ 日ごとの集計（`daily_stats`）を作り、毎時の記録は90日で消す形にした
+   （日本語の配信を全部記録するようになり、量が約3倍になったため早めに入れた）
 9. ~~表示のたびに YouTube API を呼んでいた~~ fetch に revalidate を付けて作り置き済み。
    急上昇の SQL が全履歴を読んでいたのも、時間の範囲で絞るように直した
    （`lib/snapshot-range.ts`）。新しい SQL を書くときも、live_snapshots は

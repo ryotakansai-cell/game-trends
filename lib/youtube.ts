@@ -63,9 +63,16 @@ export async function searchLiveVideos(
     }));
 }
 
-async function fetchViewerCounts(
-  videoIds: string[],
-): Promise<YouTubeLiveVideo[]> {
+/** videos.list で確かめた結果。
+ *  live：今配信中（同接が取れた）
+ *  pending：配信予定・配信中（終わるまで毎時確かめ続ける。live もここに含む）
+ *  それ以外（普通の動画・配信終了・削除済み）は「済み」で、二度と確かめなくてよい */
+export type VideoCheckResult = {
+  live: YouTubeLiveVideo[];
+  pending: Set<string>;
+};
+
+async function fetchVideoStates(videoIds: string[]): Promise<VideoCheckResult> {
   const apiKey = getApiKey();
 
   const params = new URLSearchParams({
@@ -81,27 +88,41 @@ async function fetchViewerCounts(
     throw new Error(`YouTube videos.list エラー: ${json.error.message}`);
   }
 
-  return (json.items ?? [])
-    .filter((item: any) => item.liveStreamingDetails?.concurrentViewers)
-    .map((item: any) => ({
-      videoId: item.id as string,
-      channelId: item.snippet.channelId as string,
-      channelTitle: item.snippet.channelTitle as string,
-      title: item.snippet.title as string,
-      thumbnailUrl:
-        item.snippet.thumbnails?.high?.url ??
-        item.snippet.thumbnails?.default?.url ??
-        "",
-      // concurrentViewers は文字列で返ってくるので数値に変換する
-      viewers: Number(item.liveStreamingDetails.concurrentViewers),
-    }));
+  const live: YouTubeLiveVideo[] = [];
+  const pending = new Set<string>();
+
+  for (const item of json.items ?? []) {
+    const details = item.liveStreamingDetails;
+    // 配信の情報が無い＝普通の動画、終了時刻がある＝配信が終わった。どちらも「済み」
+    if (!details || details.actualEndTime) continue;
+
+    pending.add(item.id);
+    // 同接が取れるのは配信中だけ（配信予定には無い）
+    if (details.concurrentViewers) {
+      live.push({
+        videoId: item.id as string,
+        channelId: item.snippet.channelId as string,
+        channelTitle: item.snippet.channelTitle as string,
+        title: item.snippet.title as string,
+        thumbnailUrl:
+          item.snippet.thumbnails?.high?.url ??
+          item.snippet.thumbnails?.default?.url ??
+          "",
+        // concurrentViewers は文字列で返ってくるので数値に変換する
+        viewers: Number(details.concurrentViewers),
+      });
+    }
+  }
+  return { live, pending };
 }
 
-/** 動画IDから今の同時接続数を取得する（配信が終わっていたら除外される） */
-export async function getViewerCounts(
+/** 動画IDごとに、配信中か・配信予定か・済みかを確かめる（50件で1ユニット）。
+ *  返事に含まれない動画（削除・非公開）は pending に入らないので「済み」になる */
+export async function checkVideos(
   videoIds: string[],
-): Promise<YouTubeLiveVideo[]> {
-  if (videoIds.length === 0) return [];
+): Promise<VideoCheckResult> {
+  const result: VideoCheckResult = { live: [], pending: new Set() };
+  if (videoIds.length === 0) return result;
 
   // videos.list は一度に指定できるIDが50件までなので分割する
   const chunks: string[][] = [];
@@ -109,8 +130,11 @@ export async function getViewerCounts(
     chunks.push(videoIds.slice(i, i + 50));
   }
 
-  const results = await Promise.all(chunks.map(fetchViewerCounts));
-  return results.flat();
+  for (const r of await Promise.all(chunks.map(fetchVideoStates))) {
+    result.live.push(...r.live);
+    r.pending.forEach((id) => result.pending.add(id));
+  }
+  return result;
 }
 
 /** チャンネルの RSS（新しい順に15件の動画一覧）から、最近公開された動画のIDを集める。
@@ -119,7 +143,7 @@ export async function getViewerCounts(
  *  持つ93人のうち、記録が残っていたのは5人だけだった。
  *
  *  RSS は YouTube API ではなく公開ファイルなので、枠（ユニット）を使わない。
- *  ここで集めたIDを getViewerCounts（50件で1ユニット）に渡すと、配信中のものだけが残る。
+ *  ここで集めたIDを checkVideos（50件で1ユニット）に渡すと、配信中か・済みかが分かる。
  *
  *  7日で区切るのは、予約枠を前もって作る配信者がいて、配信中の動画でも RSS 上の
  *  公開日時が最大5日前だったため（実測30件。24時間で区切ると9件を取りこぼした） */
@@ -131,10 +155,11 @@ export async function getRecentVideoIdsFromFeeds(
   const videoIds: string[] = [];
   let failed = 0;
 
-  // 100件以上を同時に読みに行くと相手の負担が大きく、制限を受けかねないので10件ずつ読む
-  for (let i = 0; i < channelIds.length; i += 10) {
+  // Cloudflare Workers は同時に開ける接続が6本までなので、6件ずつ読む。
+  // 2026-10 に Cloudflare 上で783チャンネルを2回続けて読み、全件成功・約30秒だった
+  for (let i = 0; i < channelIds.length; i += 6) {
     await Promise.all(
-      channelIds.slice(i, i + 10).map(async (channelId) => {
+      channelIds.slice(i, i + 6).map(async (channelId) => {
         try {
           const res = await fetch(
             `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`,

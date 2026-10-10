@@ -13,9 +13,10 @@
   // 公開しておくと誰でも叩ける入口が1つ増えるため
   "workers_dev": false,
 
-  // 時刻は UTC。毎時23分に Twitch、38分に YouTube（src/index.ts の JOBS と対応）
+  // 時刻は UTC。毎時23分に Twitch、38分に YouTube、毎日20:53（日本時間5:53）に日ごとの集計
+  // （src/index.ts の JOBS と対応）。集計は前日の記録が出そろった後、利用者の少ない時間に回す
   "triggers": {
-    "crons": ["23 * * * *", "38 * * * *"],
+    "crons": ["23 * * * *", "38 * * * *", "53 20 * * *"],
   },
 
   // 公開してよい値だけをここに書く。CRON_SECRET は `npx wrangler secret put CRON_SECRET` で登録する

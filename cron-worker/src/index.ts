@@ -13,6 +13,8 @@
 const JOBS: Record<string, string> = {
   "23 * * * *": "/api/cron/snapshot",
   "38 * * * *": "/api/cron/youtube-snapshot",
+  // 1日1回：前日の毎時の記録を日ごとの集計にまとめ、90日より古い記録を消す
+  "53 20 * * *": "/api/cron/daily",
 };
 
 export default {
