@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { PageHeader } from "@/components/PageHeader";
 import {
   getTopGames,
   getViewerCountByGame,
@@ -32,18 +33,19 @@ export default async function Home() {
 
   return (
     <main className="mx-auto w-full max-w-6xl px-6 py-12">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-4xl font-bold text-purple-400">ゲームトレンド</h1>
-          <p className="mt-2 text-sm text-gray-400">
+      <PageHeader
+        eyebrow="GAMES"
+        title="ゲームランキング"
+        summary={
+          <>
             Twitchでいま視聴者が多い順 ・ 上位{games.length}タイトルで
-            <span className="font-bold text-purple-300">
+            <span className="font-bold text-white">
               {formatViewers(total)}人
             </span>
             が視聴中
-          </p>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       <ul className="mt-10 grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-6">
         {games.map((game, index) => {

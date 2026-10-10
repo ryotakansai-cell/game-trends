@@ -13,6 +13,7 @@ import {
 } from "@/lib/youtube";
 import { getCreatorIdMap } from "@/lib/creators";
 import { SegmentedTabs } from "@/components/SegmentedTabs";
+import { PageHeader } from "@/components/PageHeader";
 
 import type { Metadata } from "next";
 
@@ -120,28 +121,23 @@ export default async function TrendingPage({ searchParams }: Props) {
 
   return (
     <main className="mx-auto w-full max-w-6xl px-6 py-12">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-4xl font-bold text-purple-400">Trending</h1>
-          <p className="mt-2 text-sm text-gray-400">
-            24時間前と比べて伸びている配信 ・ {entries.length}件
-          </p>
-        </div>
-      </div>
-
-      {/* 共通部品を使う。見た目の指定はSegmentedTabs側に集約されている */}
-      <div className="mt-6">
-        <SegmentedTabs
-          options={[
-            { label: "JP", href: "/trending", active: isJapanese },
-            {
-              label: "Global",
-              href: "/trending?lang=all",
-              active: !isJapanese,
-            },
-          ]}
-        />
-      </div>
+      <PageHeader
+        eyebrow="TRENDING"
+        title="急上昇"
+        summary={<>24時間前と比べて伸びている配信 ・ {entries.length}件</>}
+        region={
+          <SegmentedTabs
+            options={[
+              { label: "日本", href: "/trending", active: isJapanese },
+              {
+                label: "Global",
+                href: "/trending?lang=all",
+                active: !isJapanese,
+              },
+            ]}
+          />
+        }
+      />
 
       <ul className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {entries.map((entry, index) => (
