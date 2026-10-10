@@ -3,6 +3,7 @@ import {
   getTopGames,
   getViewerCountByGame,
   getTopStreamsPaged,
+  getStreamsByUserIds,
   isRealGame,
 } from "@/lib/twitch";
 import { getDbClient } from "@/lib/db";
@@ -27,6 +28,32 @@ export async function GET(request: NextRequest) {
 
     const games = topGames.filter(isRealGame);
     const db = getDbClient();
+
+    // ②' 名寄せ済みの配信者は、上位800配信に入っていない時間帯も直接確かめる。
+    // 配信者ページの統計（同接・配信時間）を欠けなく出すため。Twitch API は無料で、
+    // 100人まで1回で問い合わせられる
+    const linked = await db.execute(`
+      SELECT platform_id FROM accounts
+      WHERE platform = 'twitch' AND creator_id IS NOT NULL
+    `);
+    const inTop = new Set(topStreams.map((s) => s.user_id));
+    const notInTop = linked.rows
+      .map((r) => String(r.platform_id))
+      .filter((id) => !inTop.has(id));
+    const linkedStreams = await getStreamsByUserIds(notInTop);
+    // 以降は「上位800 + 圏外だった名寄せ済みの人」をまとめて記録する
+    const allStreams = [...topStreams, ...linkedStreams];
+
+    // ?dryRun=1 のときは保存せずに結果だけ返す。
+    // 手元から試すたびに本番のDBへ余分な記録が増えるのを防ぐ（DBは本番の1つだけなので）
+    if (request.nextUrl.searchParams.get("dryRun") === "1") {
+      return NextResponse.json({
+        dry_run: true,
+        top_streams: topStreams.length,
+        linked: linked.rows.length,
+        linked_live_outside_top: linkedStreams.length,
+      });
+    }
 
     // ③ games を UPSERT
     const gameRows = games.map((g) => ({
@@ -74,7 +101,7 @@ export async function GET(request: NextRequest) {
     );
 
     // ⑤ 配信者ごとの記録を組み立てる（視聴者0の配信は除外）
-    const streamerSnapshotRows = topStreams
+    const streamerSnapshotRows = allStreams
       .map((s) => ({
         streamer_id: s.user_id,
         viewers: s.viewer_count,
@@ -86,7 +113,7 @@ export async function GET(request: NextRequest) {
 
     // ⑥ accounts を UPSERT（全プラットフォーム共通テーブル）
     await db.batch(
-      topStreams.map((s) => ({
+      allStreams.map((s) => ({
         sql: `
           INSERT INTO accounts (platform, platform_id, login, display_name, language, updated_at)
           VALUES ('twitch', ?, ?, ?, ?, ?)
@@ -122,7 +149,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       games: gameRows.length,
       snapshots: snapshotRows.length,
-      streamers: topStreams.length,
+      streamers: allStreams.length,
+      linked_live_outside_top: linkedStreams.length,
       streamer_snapshots: streamerSnapshotRows.length,
       captured_at: capturedAt,
     });

@@ -113,6 +113,61 @@ export async function getViewerCounts(
   return results.flat();
 }
 
+/** チャンネルの RSS（新しい順に15件の動画一覧）から、最近公開された動画のIDを集める。
+ *  名寄せ済みの配信者が配信中かを、キーワード検索に頼らず直接確かめるために使う。
+ *  キーワード検索では引っかからないことが多く、2026-10 の実測で YouTube 本人アカウントを
+ *  持つ93人のうち、記録が残っていたのは5人だけだった。
+ *
+ *  RSS は YouTube API ではなく公開ファイルなので、枠（ユニット）を使わない。
+ *  ここで集めたIDを getViewerCounts（50件で1ユニット）に渡すと、配信中のものだけが残る。
+ *
+ *  7日で区切るのは、予約枠を前もって作る配信者がいて、配信中の動画でも RSS 上の
+ *  公開日時が最大5日前だったため（実測30件。24時間で区切ると9件を取りこぼした） */
+export async function getRecentVideoIdsFromFeeds(
+  channelIds: string[],
+  days = 7,
+): Promise<{ videoIds: string[]; failed: number }> {
+  const since = Date.now() - days * 24 * 3600 * 1000;
+  const videoIds: string[] = [];
+  let failed = 0;
+
+  // 100件以上を同時に読みに行くと相手の負担が大きく、制限を受けかねないので10件ずつ読む
+  for (let i = 0; i < channelIds.length; i += 10) {
+    await Promise.all(
+      channelIds.slice(i, i + 10).map(async (channelId) => {
+        try {
+          const res = await fetch(
+            `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`,
+            // 毎時の確認なので作り置きしない（R2 に100件以上の XML を溜めないため）
+            { cache: "no-store" },
+          );
+          if (!res.ok) {
+            failed++;
+            return;
+          }
+          const xml = await res.text();
+          // XML を丸ごと解析する部品は入れず、必要な2つのタグだけを正規表現で抜く。
+          // 1件の動画は <entry> ～ </entry> にまとまっている
+          for (const [entry] of xml.matchAll(/<entry>[\s\S]*?<\/entry>/g)) {
+            const id = entry.match(/<yt:videoId>([^<]+)<\/yt:videoId>/)?.[1];
+            const published = entry.match(
+              /<published>([^<]+)<\/published>/,
+            )?.[1];
+            if (id && published && Date.parse(published) >= since) {
+              videoIds.push(id);
+            }
+          }
+        } catch {
+          // 1チャンネル読めなくても、他のチャンネルの確認は続ける
+          failed++;
+        }
+      }),
+    );
+  }
+
+  return { videoIds, failed };
+}
+
 /** 日本向け検索で使うキーワードのローテーション候補 */
 export const JP_LIVE_KEYWORDS = ["配信", "ゲーム実況", "vtuber", "雑談"];
 

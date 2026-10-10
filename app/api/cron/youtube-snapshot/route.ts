@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   searchLiveVideos,
   getViewerCounts,
+  getRecentVideoIdsFromFeeds,
   JP_LIVE_KEYWORDS,
   GLOBAL_LIVE_KEYWORDS,
   pickKeyword,
@@ -39,12 +40,52 @@ export async function GET(request: NextRequest) {
       if (!found.has(v.videoId)) found.set(v.videoId, { region: "global" });
     });
 
-    // ⑤ 視聴者数を取得
+    // RSS で足した分と区別して、結果の件数を出すために取っておく
+    const searchedIds = new Set(found.keys());
+
+    const db = getDbClient();
+
+    // ④' 名寄せ済みの本人チャンネルは、検索に引っかからなくても直接確かめる。
+    // 配信者ページの統計（同接・配信時間）を欠けなく出すため。
+    // 切り抜き・アーカイブのチャンネルは投稿が多いのに配信はほぼしないので含めない
+    // （含めると確認する動画が倍以上に増え、枠を無駄に使う）
+    const linked = await db.execute(`
+      SELECT platform_id FROM accounts
+      WHERE platform = 'youtube' AND relation = 'self' AND creator_id IS NOT NULL
+    `);
+    const feeds = await getRecentVideoIdsFromFeeds(
+      linked.rows.map((r) => String(r.platform_id)),
+    );
+    let feedCandidates = 0;
+    for (const id of feeds.videoIds) {
+      if (found.has(id)) continue;
+      // 名寄せの対象は日本の配信者なので、日本向けの検索で見つけた扱いにする
+      found.set(id, { region: "jp" });
+      feedCandidates++;
+    }
+
+    // ⑤ 視聴者数を取得（配信中でない動画はここで落ちる）
     const videoIds = [...found.keys()];
     const videos = await getViewerCounts(videoIds);
 
-    const db = getDbClient();
     const capturedAt = new Date().toISOString();
+
+    // ?dryRun=1 のときは保存せずに結果だけ返す。
+    // 手元から試すたびに本番のDBへ余分な記録が増えるのを防ぐ（DBは本番の1つだけなので）
+    if (request.nextUrl.searchParams.get("dryRun") === "1") {
+      return NextResponse.json({
+        dry_run: true,
+        searched: jpA.length + jpB.length + global.length,
+        linked_channels: linked.rows.length,
+        feed_candidates: feedCandidates,
+        feed_failed: feeds.failed,
+        // videos.list は50件で1ユニット
+        videos_list_units: Math.ceil(videoIds.length / 50),
+        live: videos.length,
+        live_from_feeds: videos.filter((v) => !searchedIds.has(v.videoId))
+          .length,
+      });
+    }
 
     // ⑥ 配信ごとの記録を組み立てる
     const snapshotRows = videos.map((v) => ({
@@ -100,6 +141,10 @@ export async function GET(request: NextRequest) {
       global_keyword: globalKeyword,
       found: videos.length,
       streamers: videos.length,
+      // 名寄せ済みチャンネルの直接確認の結果。feed_failed が増えたら RSS が弾かれている
+      feed_candidates: feedCandidates,
+      feed_failed: feeds.failed,
+      live_from_feeds: videos.filter((v) => !searchedIds.has(v.videoId)).length,
       captured_at: capturedAt,
     });
   } catch (e) {
