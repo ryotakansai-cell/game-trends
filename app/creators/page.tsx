@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { PageHeader } from "@/components/PageHeader";
 import { getCreators } from "@/lib/creators";
 import { getUsersByLogin } from "@/lib/twitch";
 
@@ -27,10 +28,13 @@ export default async function CreatorsPage() {
 
   return (
     <main className="mx-auto w-full max-w-6xl px-6 py-12">
-      <h1 className="text-4xl font-bold text-purple-400">Creators</h1>
-      <p className="mt-2 text-sm text-gray-400">
-        プラットフォームをまたいで紐付けた配信者 ・ {creators.length}人
-      </p>
+      <PageHeader
+        eyebrow="CREATORS"
+        title="配信者"
+        summary={
+          <>プラットフォームをまたいで紐付けた配信者 ・ {creators.length}人</>
+        }
+      />
 
       {creators.length === 0 ? (
         <p className="mt-8 text-sm text-gray-500">

@@ -14,6 +14,9 @@ import {
 } from "@/lib/youtube";
 import { getCreatorIdMap } from "@/lib/creators";
 import { SegmentedTabs } from "@/components/SegmentedTabs";
+import { PageHeader } from "@/components/PageHeader";
+import { FilterPills } from "@/components/FilterPills";
+import { TwitchIcon, YouTubeIcon } from "@/components/PlatformIcons";
 
 export const revalidate = 180;
 
@@ -137,55 +140,58 @@ export default async function Home({ searchParams }: Props) {
 
   return (
     <main className="mx-auto w-full max-w-6xl px-6 py-12">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-4xl font-bold text-purple-400">Live Ranking</h1>
-          <p className="mt-2 text-sm text-gray-400">
-            配信中 ・ 上位{entries.length}配信で
-            <span className="font-bold text-purple-300">
+      <PageHeader
+        eyebrow="LIVE RANKING"
+        title="ライブランキング"
+        summary={
+          <>
+            上位{entries.length}配信で
+            <span className="font-bold text-white">
               {formatViewers(totalViewers)}人
             </span>
             が視聴中
-          </p>
-        </div>
-      </div>
-
-      {/* プラットフォーム/言語切替（共通部品を使用。必ず縦に2段） */}
-      <div className="mt-6 flex flex-col gap-2">
-        <SegmentedTabs
-          options={[
-            {
-              label: "All",
-              href: buildHref("all", isJapanese),
-              active: selectedPlatform === "all",
-            },
-            {
-              label: "Twitch",
-              href: buildHref("twitch", isJapanese),
-              active: selectedPlatform === "twitch",
-            },
-            {
-              label: "YouTube",
-              href: buildHref("youtube", isJapanese),
-              active: selectedPlatform === "youtube",
-            },
-          ]}
-        />
-        <SegmentedTabs
-          options={[
-            {
-              label: "JP",
-              href: buildHref(selectedPlatform, true),
-              active: isJapanese,
-            },
-            {
-              label: "Global",
-              href: buildHref(selectedPlatform, false),
-              active: !isJapanese,
-            },
-          ]}
-        />
-      </div>
+          </>
+        }
+        region={
+          <SegmentedTabs
+            options={[
+              {
+                label: "日本",
+                href: buildHref(selectedPlatform, true),
+                active: isJapanese,
+              },
+              {
+                label: "Global",
+                href: buildHref(selectedPlatform, false),
+                active: !isJapanese,
+              },
+            ]}
+          />
+        }
+        filters={
+          <FilterPills
+            options={[
+              {
+                label: "すべて",
+                href: buildHref("all", isJapanese),
+                active: selectedPlatform === "all",
+              },
+              {
+                label: "Twitch",
+                icon: <TwitchIcon />,
+                href: buildHref("twitch", isJapanese),
+                active: selectedPlatform === "twitch",
+              },
+              {
+                label: "YouTube",
+                icon: <YouTubeIcon />,
+                href: buildHref("youtube", isJapanese),
+                active: selectedPlatform === "youtube",
+              },
+            ]}
+          />
+        }
+      />
 
       <ul className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {entries.map((entry, index) => (

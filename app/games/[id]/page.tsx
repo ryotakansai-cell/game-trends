@@ -190,7 +190,7 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
         <h2 className="text-lg font-bold text-gray-200">配信中</h2>
         <SegmentedTabs
           options={[
-            { label: "JP", href: `/games/${id}`, active: isJapanese },
+            { label: "日本", href: `/games/${id}`, active: isJapanese },
             {
               label: "Global",
               href: `/games/${id}?lang=all`,

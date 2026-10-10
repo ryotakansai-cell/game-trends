@@ -2,7 +2,7 @@ import Link from "next/link";
 
 // タブ1つ分の情報
 type Option = {
-  label: string; // 画面に出す文字（"JP" や "Twitch"）
+  label: string; // 画面に出す文字（"日本" や "Global"）
   href: string; // 押したときの遷移先URL
   active: boolean; // 今これが選ばれているか
 };
