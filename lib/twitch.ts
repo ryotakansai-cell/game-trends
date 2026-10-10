@@ -375,6 +375,28 @@ export async function getTopStreamsPaged(pages = 8) {
   return streams;
 }
 
+/** 指定したユーザーIDのうち、今配信中の人の配信を取得する（配信していない人は返らない）。
+ *  名寄せ済みの配信者は、上位800配信に入っていない時間帯も記録したいので直接問い合わせる。
+ *  上位800位の線は、日本の深夜で200〜570人まで下がる（2026-10 の実測） */
+export async function getStreamsByUserIds(userIds: string[]) {
+  if (userIds.length === 0) return [];
+
+  // Twitch API は1回100件までなので分割する
+  const chunks: string[][] = [];
+  for (let i = 0; i < userIds.length; i += 100) {
+    chunks.push(userIds.slice(i, i + 100));
+  }
+
+  const results = await Promise.all(
+    chunks.map((chunk) => {
+      const params = new URLSearchParams({ first: "100" });
+      chunk.forEach((id) => params.append("user_id", id));
+      return twitchFetch<TwitchStreamFull>(`/streams?${params.toString()}`);
+    }),
+  );
+  return results.flat();
+}
+
 // ============================================
 // 急上昇ランキング用（Twitch APIではなく、DBに貯めた履歴を読む）
 // ============================================
