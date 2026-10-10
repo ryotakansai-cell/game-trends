@@ -194,6 +194,9 @@ DBを直接読む（Twitchと違い、表示のたびにAPIを叩けないため
 
 配信者を出す場所には必ずアイコンを付ける。
 
+サイトのアイコンは `design/icon.svg`（再生ボタンの中に伸びる折れ線。2026-10-10 に決定）。
+絵を変えたら `npm run make:icons` で `app/icon.svg`・`favicon.ico`・`apple-icon.png` を作り直す。
+
 見出しは `PageHeader` を使い、全ページで形をそろえる。見出しは日本語（ライブランキング /
 急上昇 / ゲームランキング / 配信者）、上に小さな英字を添える。地域は右上の `SegmentedTabs`
 （ずっと2択のスイッチなのでつながった形）、配信元は下の `FilterPills`（ツイキャスなどで
@@ -348,7 +351,9 @@ probeの結果がある人でも検索は妨げないようにするため。
    （`lib/snapshot-range.ts`）。新しい SQL を書くときも、live_snapshots は
    必ず captured_at の範囲か最新時刻の一致で絞ること（全件を読むと遅く、Turso の枠も減る）
 10. ~~ヨルシカのサイトも Cloudflare に移す~~ 移行済み（https://yorushika.sukinote.com）
-11. Cloudflare Web Analytics を有効にする（Vercel Analytics を外したため、今は計測なし）
+11. ~~アクセス解析~~ Cloudflare Web Analytics の自動設定（sukinote.com 単位）で計測中。
+    Cloudflare が配信時にスクリプトを差し込むので、コードには書かない（書くと二重計測になる）。
+    新しいサブドメインのサイトも自動で対象になる
 12. ~~デプロイの自動化~~ Workers Builds で main への push ごとに自動デプロイ
 
 ## 方針
