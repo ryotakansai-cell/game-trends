@@ -7,6 +7,12 @@
 //
 // captured_at は toISOString() の形（2026-10-07T12:23:00.000Z）で保存しているので、
 // 同じ形の文字列どうしなら BETWEEN の文字列比較で時刻の範囲になる
+/** 日本時間の日付（2026-10-10）を返す。集計や「何日見つかったか」は日本の1日で区切る。
+ *  UTC のまま日付を切ると、日本の朝9時で日が変わってしまうため */
+export function jstDay(date = new Date()): string {
+  return new Date(date.getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
 export function pastWindow(hours: number): [string, string] {
   const center = Date.now() - 24 * 3600 * 1000;
   return [

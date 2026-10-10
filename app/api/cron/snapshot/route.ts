@@ -4,9 +4,11 @@ import {
   getViewerCountByGame,
   getTopStreamsPaged,
   getStreamsByUserIds,
+  getJapaneseStreams,
   isRealGame,
+  type TwitchStreamFull,
 } from "@/lib/twitch";
-import { getDbClient } from "@/lib/db";
+import { getDbClient, batchInChunks } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -20,29 +22,35 @@ export async function GET(request: NextRequest) {
 
   try {
     // ② Twitchからデータを取得（並列）
-    const [topGames, viewerCounts, topStreams] = await Promise.all([
+    const [topGames, viewerCounts, topStreams, jpStreams] = await Promise.all([
       getTopGames(60),
       getViewerCountByGame(4),
       getTopStreamsPaged(8),
+      // 日本語の配信は10人以上を全部。新人も含めて分析の対象にするため
+      getJapaneseStreams(10),
     ]);
 
     const games = topGames.filter(isRealGame);
     const db = getDbClient();
 
-    // ②' 名寄せ済みの配信者は、上位800配信に入っていない時間帯も直接確かめる。
-    // 配信者ページの統計（同接・配信時間）を欠けなく出すため。Twitch API は無料で、
-    // 100人まで1回で問い合わせられる
+    // 全世界の上位800と日本語の配信は重なるので、配信者IDで1つにまとめる。
+    // Map は C# の Dictionary と同じで、同じキーを set すると上書きになる
+    const byUser = new Map<string, TwitchStreamFull>();
+    for (const s of [...topStreams, ...jpStreams]) byUser.set(s.user_id, s);
+
+    // ②' 名寄せ済みの配信者で、上の2つに入っていない人は直接確かめる。
+    // 配信の言語を日本語以外にしている人や、10人を割った時間帯も欠けなく記録するため
     const linked = await db.execute(`
       SELECT platform_id FROM accounts
       WHERE platform = 'twitch' AND creator_id IS NOT NULL
     `);
-    const inTop = new Set(topStreams.map((s) => s.user_id));
-    const notInTop = linked.rows
+    const notCovered = linked.rows
       .map((r) => String(r.platform_id))
-      .filter((id) => !inTop.has(id));
-    const linkedStreams = await getStreamsByUserIds(notInTop);
-    // 以降は「上位800 + 圏外だった名寄せ済みの人」をまとめて記録する
-    const allStreams = [...topStreams, ...linkedStreams];
+      .filter((id) => !byUser.has(id));
+    const linkedStreams = await getStreamsByUserIds(notCovered);
+    for (const s of linkedStreams) byUser.set(s.user_id, s);
+
+    const allStreams = [...byUser.values()];
 
     // ?dryRun=1 のときは保存せずに結果だけ返す。
     // 手元から試すたびに本番のDBへ余分な記録が増えるのを防ぐ（DBは本番の1つだけなので）
@@ -50,8 +58,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         dry_run: true,
         top_streams: topStreams.length,
+        jp_streams: jpStreams.length,
         linked: linked.rows.length,
-        linked_live_outside_top: linkedStreams.length,
+        linked_live_outside: linkedStreams.length,
+        total: allStreams.length,
       });
     }
 
@@ -111,8 +121,12 @@ export async function GET(request: NextRequest) {
       }))
       .filter((row) => row.viewers > 0);
 
-    // ⑥ accounts を UPSERT（全プラットフォーム共通テーブル）
-    await db.batch(
+    // ⑥ accounts を UPSERT（全プラットフォーム共通テーブル）。
+    // 名前などが前回と同じなら書き込まない（末尾の WHERE）。毎時2,000件以上を
+    // 同じ値で上書きすると、Turso の書き込み枠（月1,000万行）の約3割をそれだけで使うため。
+    // IS NOT は「NULL どうしも等しいとみなす !=」（language が NULL の行があるので必要）
+    await batchInChunks(
+      db,
       allStreams.map((s) => ({
         sql: `
           INSERT INTO accounts (platform, platform_id, login, display_name, language, updated_at)
@@ -122,14 +136,17 @@ export async function GET(request: NextRequest) {
             display_name = excluded.display_name,
             language = excluded.language,
             updated_at = excluded.updated_at
+          WHERE accounts.login IS NOT excluded.login
+             OR accounts.display_name IS NOT excluded.display_name
+             OR accounts.language IS NOT excluded.language
         `,
         args: [s.user_id, s.user_login, s.user_name, s.language, capturedAt],
       })),
-      "write",
     );
 
     // ⑦ live_snapshots を INSERT
-    await db.batch(
+    await batchInChunks(
+      db,
       streamerSnapshotRows.map((s) => ({
         sql: `
           INSERT INTO live_snapshots (account_id, viewers, title, game_id, captured_at)
@@ -143,14 +160,14 @@ export async function GET(request: NextRequest) {
         `,
         args: [s.streamer_id, s.viewers, s.title, s.game_id, s.captured_at],
       })),
-      "write",
     );
 
     return NextResponse.json({
       games: gameRows.length,
       snapshots: snapshotRows.length,
       streamers: allStreams.length,
-      linked_live_outside_top: linkedStreams.length,
+      jp_streams: jpStreams.length,
+      linked_live_outside: linkedStreams.length,
       streamer_snapshots: streamerSnapshotRows.length,
       captured_at: capturedAt,
     });
