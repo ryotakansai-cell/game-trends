@@ -63,14 +63,13 @@ game-trends のままだが、中身は配信者・配信が主役でゲーム�
 ```
 app/
 ├── page.tsx                    トップ（Live Ranking。Twitch/YouTube統合 + プラットフォーム/地域タブ）
-├── trending/page.tsx           急上昇（24時間前との比較。JP/Globalタブ）
+├── trending/page.tsx           急上昇（24時間前との比較。日本/Global・配信元の絞り込み）
 ├── creators/page.tsx           クリエイター一覧（名寄せ済みの人物）
 ├── creators/[id]/page.tsx      クリエイター統合ページ（全プラットフォームを1ページに）
 ├── games/page.tsx              ゲームランキング（Twitchのみ。YouTube側にゲーム判定が無いため）
 ├── games/[id]/page.tsx         ゲーム詳細（配信者一覧 + 外部リンク）
 ├── streamers/[login]/page.tsx  配信者ページ（Twitch単体。クリップ・アーカイブ）
 └── api/
-    ├── twitch/route.ts               動作確認用のJSONエンドポイント
     ├── cron/snapshot/route.ts        Twitch: 毎時DBに保存（games/snapshots、accounts/live_snapshots）
     └── cron/youtube-snapshot/route.ts YouTube: 毎時DBに保存（accounts/live_snapshots）
 components/
@@ -78,7 +77,8 @@ components/
 ├── PageHeader.tsx              各ページの見出し（紫の小さな英字 + 白い見出し + 右上に地域 + 下に絞り込み）
 ├── SegmentedTabs.tsx           日本/Global の切り替え（つながった2択スイッチ）
 ├── FilterPills.tsx             配信元の丸ボタン（すべて/Twitch/YouTube。増えても折り返す）
-└── PlatformIcons.tsx           配信元の単色アイコン（色は付けず currentColor）
+├── PlatformIcons.tsx           配信元の単色アイコン（色は付けず currentColor）
+└── RelativeTime.tsx            「◯分前」（ブラウザ側で計算。作り置きされても数字が古くならない）
 lib/
 ├── twitch.ts                   Twitch APIとの通信（唯一の窓口）
 ├── youtube.ts                  YouTube Data API v3との通信 + DBからのランキング読み取り
@@ -194,7 +194,7 @@ DBを直接読む（Twitchと違い、表示のたびにAPIを叩けないため
 
 配信者を出す場所には必ずアイコンを付ける。
 
-サイトのアイコンは `design/icon.svg`（再生ボタンの中に伸びる折れ線。2026-10-10 に決定）。
+サイトのアイコンは `design/icon.svg`（横長の動画の枠の中で伸びる折れ線。2026-10-10 に決定）。
 絵を変えたら `npm run make:icons` で `app/icon.svg`・`favicon.ico`・`apple-icon.png` を作り直す。
 
 見出しは `PageHeader` を使い、全ページで形をそろえる。見出しは日本語（ライブランキング /
@@ -202,6 +202,20 @@ DBを直接読む（Twitchと違い、表示のたびにAPIを叩けないため
 （ずっと2択のスイッチなのでつながった形）、配信元は下の `FilterPills`（ツイキャスなどで
 増えていく選択肢なので、離れた丸ボタンで折り返せる形）。役割が違うので見た目も分ける。
 配信元のアイコンは各サービスの色を使わず単色にする（紫で統一感を出すため）。
+
+スマホ（sm 未満）だけの決まり：
+- ナビは画面下に固定したタブバー（4つ）。上の下線ナビだと「配信者」が画面外に切れていたため。
+  上には代わりにサイトのアイコンと名前を出す。body に同じ高さの下余白を入れてある
+- 配信元の丸ボタンと地域の切り替えを1行にまとめ、スクロールしても上に固定する。
+  1行（約48px）を超えると画面を占めて見づらいので、スマホでは丸ボタンのアイコンを省く
+- 見出しは小さめ（text-2xl）
+
+配色は暗い背景だけ（`globals.css` で固定）。以前は端末がライトモードだと背景だけ白になり、
+白い見出しや配信タイトルが読めなくなっていた。
+
+各ページの説明文に更新間隔と「◯分前」を出す（ライブ：Twitch 5分ごと / YouTube 毎時、
+急上昇：毎時、ゲーム：5分ごと）。ランキングの鮮度が分かると信頼してもらいやすいため。
+画像の入れ物には `bg-white/5` を敷き、読み込み中に真っ黒な四角が並ばないようにする。
 
 ## 禁止事項
 

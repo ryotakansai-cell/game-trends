@@ -27,7 +27,7 @@ export default async function CreatorsPage() {
   const users = await getUsersByLogin(logins);
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-6 py-12">
+    <main className="mx-auto w-full max-w-6xl px-6 py-6 sm:py-12">
       <PageHeader
         eyebrow="CREATORS"
         title="配信者"

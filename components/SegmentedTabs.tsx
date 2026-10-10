@@ -14,12 +14,13 @@ type Option = {
  */
 export function SegmentedTabs({ options }: { options: Option[] }) {
   return (
-    <div className="inline-flex w-fit gap-1 rounded-lg bg-white/5 p-1">
+    <div className="inline-flex w-fit shrink-0 gap-1 rounded-lg bg-white/5 p-1">
       {options.map((o) => (
         <Link
           key={o.href}
           href={o.href}
-          className={`rounded-md px-3.5 py-1.5 text-sm transition ${
+          // スマホでは配信元の丸ボタンと同じ1行に並べるので、小さめにする
+          className={`whitespace-nowrap rounded-md px-2.5 py-1 text-xs transition sm:px-3.5 sm:py-1.5 sm:text-sm ${
             o.active
               ? "bg-purple-500 text-white"
               : "text-gray-400 hover:text-gray-200"

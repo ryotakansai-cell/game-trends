@@ -32,7 +32,7 @@ export default async function Home() {
   );
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-6 py-12">
+    <main className="mx-auto w-full max-w-6xl px-6 py-6 sm:py-12">
       <PageHeader
         eyebrow="GAMES"
         title="ゲームランキング"
@@ -43,6 +43,8 @@ export default async function Home() {
               {formatViewers(total)}人
             </span>
             が視聴中
+            {/* Twitch API の返事とページの作り置きが、どちらも5分ごとに作り直される */}
+            <span className="mt-0.5 block text-gray-500">更新：5分ごと</span>
           </>
         }
       />
@@ -56,7 +58,7 @@ export default async function Home() {
               {/* カード全体をリンクにする。/games/[id] は前から存在していたが
                   ここが <Link> になっておらず、たどり着けなかった */}
               <Link href={`/games/${game.id}`}>
-                <div className="relative overflow-hidden rounded-lg border border-white/10 transition group-hover:border-purple-400/50">
+                <div className="relative overflow-hidden rounded-lg border border-white/10 bg-white/5 transition group-hover:border-purple-400/50">
                   <Image
                     src={boxArt(game.box_art_url)}
                     alt={game.name}

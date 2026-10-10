@@ -17,6 +17,7 @@ import { SegmentedTabs } from "@/components/SegmentedTabs";
 import { PageHeader } from "@/components/PageHeader";
 import { FilterPills } from "@/components/FilterPills";
 import { TwitchIcon, YouTubeIcon } from "@/components/PlatformIcons";
+import { RelativeTime } from "@/components/RelativeTime";
 
 export const revalidate = 180;
 
@@ -137,9 +138,11 @@ export default async function Home({ searchParams }: Props) {
     .slice(0, 40);
 
   const totalViewers = entries.reduce((sum, e) => sum + e.viewers, 0);
+  // YouTube の行はどれも同じ収集回のものなので、先頭の時刻がそのまま最終収集の時刻
+  const youtubeAt = youtubeVideos[0]?.captured_at;
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-6 py-12">
+    <main className="mx-auto w-full max-w-6xl px-6 py-6 sm:py-12">
       <PageHeader
         eyebrow="LIVE RANKING"
         title="ライブランキング"
@@ -150,6 +153,18 @@ export default async function Home({ searchParams }: Props) {
               {formatViewers(totalViewers)}人
             </span>
             が視聴中
+            {/* データの鮮度。Twitch は表示のたびに API を読む（返事の作り置きは最大5分）、
+                YouTube は毎時の収集結果を DB から読むので、それぞれの更新間隔を出す */}
+            <span className="mt-0.5 block text-gray-500">
+              更新：{showTwitch && "Twitch 5分ごと"}
+              {showTwitch && showYouTube && " / "}
+              {showYouTube && "YouTube 毎時"}
+              {youtubeAt && (
+                <>
+                  （<RelativeTime iso={youtubeAt} />）
+                </>
+              )}
+            </span>
           </>
         }
         region={
@@ -197,7 +212,7 @@ export default async function Home({ searchParams }: Props) {
         {entries.map((entry, index) => (
           <li key={entry.key} className="group">
             <a href={entry.watchHref} target="_blank" rel="noopener noreferrer">
-              <div className="relative aspect-video overflow-hidden rounded-lg border border-white/10">
+              <div className="relative aspect-video overflow-hidden rounded-lg border border-white/10 bg-white/5">
                 <Image
                   src={entry.thumbnailUrl}
                   alt={entry.title}
