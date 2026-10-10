@@ -1,8 +1,12 @@
 @import "tailwindcss";
 
+/* このサイトは暗い背景だけを前提にデザインしている（白い文字・半透明の白の枠など）。
+   以前は端末がライトモードだと背景が白になり、見出しや配信タイトルが白地に白で
+   読めなくなっていた（2026-10-10 に発見）。端末の設定に関係なく、常に暗い配色にする */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0a0a0a;
+  --foreground: #ededed;
+  color-scheme: dark;
 }
 
 @theme inline {
@@ -12,12 +16,6 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
 
 body {
   background: var(--background);

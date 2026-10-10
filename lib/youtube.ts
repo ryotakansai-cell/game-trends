@@ -141,6 +141,8 @@ export type YouTubeLiveRankingRow = {
   region: "jp" | "global";
   channel_id: string;
   channel_title: string;
+  /** この記録を収集した時刻。ページに「最終更新 ◯分前」を出すのに使う */
+  captured_at: string;
 };
 
 /** チャンネルIDから、アイコン画像のURLをまとめて取得する（表示時にその場で取得。TwitchのgetUsersByLoginと同じ考え方） */
@@ -205,7 +207,8 @@ export async function getTopYouTubeLive(
       l.viewers,
       l.region,
       a.platform_id AS channel_id,
-      a.display_name AS channel_title
+      a.display_name AS channel_title,
+      l.captured_at
     FROM live_snapshots l
     JOIN accounts a ON a.id = l.account_id
     WHERE a.platform = 'youtube'

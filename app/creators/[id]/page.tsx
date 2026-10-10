@@ -99,7 +99,7 @@ function ItemCard({
         className={stacked ? "block" : "flex gap-3 sm:block"}
       >
         <div
-          className={`relative aspect-video overflow-hidden rounded-lg border border-white/10 ${
+          className={`relative aspect-video overflow-hidden rounded-lg border border-white/10 bg-white/5 ${
             stacked ? "" : "w-40 shrink-0 sm:w-auto"
           }`}
         >
@@ -194,7 +194,7 @@ export default async function CreatorPage({ params, searchParams }: Props) {
   const sortLabel = sortByRecent ? "新しい順" : `${narrowed.label}の人気順`;
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-6 py-12">
+    <main className="mx-auto w-full max-w-6xl px-6 py-6 sm:py-12">
       {/* ヘッダー：人物そのものの情報 */}
       <div className="flex flex-wrap items-start gap-5 rounded-xl border border-white/10 bg-white/5 p-6">
         {headerIcon && (

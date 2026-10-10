@@ -37,6 +37,9 @@ export const metadata: Metadata = {
 export const viewport = {
   width: "device-width",
   initialScale: 1,
+  // iPhone の画面下のバー（ホームインジケーター）の高さを env(safe-area-inset-bottom) で
+  // 取れるようにする。スマホの下部タブバーがバーと重ならないようにするため
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -45,7 +48,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="ja"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">
+      {/* スマホは画面下にタブバーを固定するので、その高さ分だけ下に余白を空ける */}
+      <body className="min-h-full flex flex-col pb-[calc(3.75rem+env(safe-area-inset-bottom))] sm:pb-0">
         <SiteHeader />
         {children}
         {/* アクセス解析は Cloudflare Web Analytics の「自動設定」（sukinote.com 単位）で、

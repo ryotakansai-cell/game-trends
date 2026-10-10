@@ -14,6 +14,9 @@ import {
 import { getCreatorIdMap } from "@/lib/creators";
 import { SegmentedTabs } from "@/components/SegmentedTabs";
 import { PageHeader } from "@/components/PageHeader";
+import { FilterPills } from "@/components/FilterPills";
+import { TwitchIcon, YouTubeIcon } from "@/components/PlatformIcons";
+import { RelativeTime } from "@/components/RelativeTime";
 
 import type { Metadata } from "next";
 
@@ -29,8 +32,19 @@ export const revalidate = 300;
 
 // URLの ?lang=all を受け取る（トップページと同じ規則）
 type Props = {
-  searchParams: Promise<{ lang?: string }>;
+  searchParams: Promise<{ lang?: string; platform?: string }>;
 };
+
+type Platform = "all" | "twitch" | "youtube";
+
+/** 選んだタブを維持したまま、リンク先のURLを組み立てる（トップページと同じ規則） */
+function buildHref(platform: Platform, isJapanese: boolean) {
+  const params = new URLSearchParams();
+  if (platform !== "all") params.set("platform", platform);
+  if (!isJapanese) params.set("lang", "all");
+  const qs = params.toString();
+  return qs ? `/trending?${qs}` : "/trending";
+}
 
 // トップページの UnifiedEntry と同じ考え方。
 // TwitchとYouTubeの形が違うので、表示用の共通の形に揃える
@@ -49,14 +63,23 @@ type RisingEntry = {
 };
 
 export default async function TrendingPage({ searchParams }: Props) {
-  const { lang } = await searchParams;
+  const { lang, platform } = await searchParams;
   const isJapanese = lang !== "all"; // デフォルトは日本
+  const selectedPlatform: Platform =
+    platform === "twitch" || platform === "youtube" ? platform : "all";
+  const showTwitch = selectedPlatform !== "youtube";
+  const showYouTube = selectedPlatform !== "twitch";
 
   // 2つのDB問い合わせを同時に走らせる（順番に待つより速い）
   // 日本タブなら言語で絞り、Globalタブなら絞らない（＝全部）
   const [twitchRising, youtubeRising] = await Promise.all([
-    getRisingStreamers(200, 20, isJapanese ? "ja" : undefined),
-    getRisingYouTubeLive(50, 20, isJapanese ? "jp" : undefined),
+    // 絞り込みで選ばれていない方は問い合わせ自体をしない（DBの読み取りを減らす）
+    showTwitch
+      ? getRisingStreamers(200, 20, isJapanese ? "ja" : undefined)
+      : Promise.resolve([]),
+    showYouTube
+      ? getRisingYouTubeLive(50, 20, isJapanese ? "jp" : undefined)
+      : Promise.resolve([]),
   ]);
 
   // アイコンは表示時にその場で取得する（DBには保存しない方針）
@@ -119,20 +142,66 @@ export default async function TrendingPage({ searchParams }: Props) {
     .sort((a, b) => b.growthRate - a.growthRate)
     .slice(0, 30);
 
+  // 最終集計の時刻（どちらも毎時の収集結果なので、新しい方を出す）
+  const latestAt = [
+    ...twitchRising.map((s) => s.current_at),
+    ...youtubeRising.map((v) => v.current_at),
+  ].sort()
+    .at(-1);
+
   return (
-    <main className="mx-auto w-full max-w-6xl px-6 py-12">
+    <main className="mx-auto w-full max-w-6xl px-6 py-6 sm:py-12">
       <PageHeader
         eyebrow="TRENDING"
         title="急上昇"
-        summary={<>24時間前と比べて伸びている配信 ・ {entries.length}件</>}
+        summary={
+          <>
+            24時間前と比べて伸びている配信 ・ {entries.length}件
+            <span className="mt-0.5 block text-gray-500">
+              更新：毎時
+              {latestAt && (
+                <>
+                  （<RelativeTime iso={latestAt} />）
+                </>
+              )}
+            </span>
+          </>
+        }
         region={
           <SegmentedTabs
             options={[
-              { label: "日本", href: "/trending", active: isJapanese },
+              {
+                label: "日本",
+                href: buildHref(selectedPlatform, true),
+                active: isJapanese,
+              },
               {
                 label: "Global",
-                href: "/trending?lang=all",
+                href: buildHref(selectedPlatform, false),
                 active: !isJapanese,
+              },
+            ]}
+          />
+        }
+        filters={
+          <FilterPills
+            options={[
+              {
+                label: "すべて",
+                href: buildHref("all", isJapanese),
+                active: selectedPlatform === "all",
+              },
+              {
+                label: "Twitch",
+                icon: <TwitchIcon />,
+                href: buildHref("twitch", isJapanese),
+                active: selectedPlatform === "twitch",
+              },
+              {
+                label: "YouTube",
+                icon: <YouTubeIcon />,
+                href: buildHref("youtube", isJapanese),
+                active: selectedPlatform === "youtube",
               },
             ]}
           />
@@ -145,7 +214,7 @@ export default async function TrendingPage({ searchParams }: Props) {
             <a href={entry.watchHref} target="_blank" rel="noopener noreferrer">
               {/* aspect-video で縦横比を固定。TwitchとYouTubeでサムネの
                   元サイズが違っても、カードの高さが揃う */}
-              <div className="relative aspect-video overflow-hidden rounded-lg border border-white/10">
+              <div className="relative aspect-video overflow-hidden rounded-lg border border-white/10 bg-white/5">
                 <Image
                   src={entry.thumbnailUrl}
                   alt={entry.title}

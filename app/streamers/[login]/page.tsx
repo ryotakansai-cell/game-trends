@@ -69,7 +69,7 @@ export default async function StreamerPage({ params }: Props) {
   ];
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-6 py-12">
+    <main className="mx-auto w-full max-w-6xl px-6 py-6 sm:py-12">
       {/* プロフィール */}
       <div className="flex flex-wrap items-start gap-5 rounded-xl border border-white/10 bg-white/5 p-6">
         <Image
@@ -183,7 +183,7 @@ export default async function StreamerPage({ params }: Props) {
                   rel="noopener noreferrer"
                   className="flex gap-3 sm:block"
                 >
-                  <div className="relative aspect-video w-40 shrink-0 overflow-hidden rounded-lg border border-white/10 sm:w-auto">
+                  <div className="relative aspect-video w-40 shrink-0 overflow-hidden rounded-lg border border-white/10 bg-white/5 sm:w-auto">
                     <Image
                       src={clip.thumbnail_url}
                       alt={clip.title}
@@ -228,7 +228,7 @@ export default async function StreamerPage({ params }: Props) {
                   rel="noopener noreferrer"
                   className="flex gap-3 sm:block"
                 >
-                  <div className="relative aspect-video w-40 shrink-0 overflow-hidden rounded-lg border border-white/10 sm:w-auto">
+                  <div className="relative aspect-video w-40 shrink-0 overflow-hidden rounded-lg border border-white/10 bg-white/5 sm:w-auto">
                     <Image
                       src={videoThumb(video.thumbnail_url)}
                       alt={video.title}

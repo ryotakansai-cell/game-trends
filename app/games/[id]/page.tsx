@@ -111,7 +111,7 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
   ];
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-6 py-12">
+    <main className="mx-auto w-full max-w-6xl px-6 py-6 sm:py-12">
       {/* ゲーム情報の帯 */}
       <div className="flex flex-wrap items-start gap-5 rounded-xl border border-white/10 bg-white/5 p-5">
         <Image
@@ -226,7 +226,7 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                <div className="relative overflow-hidden rounded-lg border border-white/10">
+                <div className="relative overflow-hidden rounded-lg border border-white/10 bg-white/5">
                   <Image
                     src={streamThumb(stream.thumbnail_url)}
                     alt={stream.title}

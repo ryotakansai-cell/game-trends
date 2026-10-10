@@ -1,7 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72">
-  <!-- 配信トレンドのアイコン：再生ボタンの中に、伸びていく折れ線（案9。2026-10-10 オーナーが選んだ）。
+  <!-- 配信トレンドのアイコン：横長の動画の枠の中で、伸びていく折れ線（案B。2026-10-10 オーナーが選んだ）。
+       「配信（動画）の中で伸びている」をそのまま絵にした。PC のモニターに見えないよう台は付けない。
        紫はサイトの「現在地・選択中」の色にそろえている -->
   <rect width="72" height="72" rx="16" fill="#7c3aed"/>
-  <path d="M22 14 L22 58 L60 36 Z" fill="#fff" stroke="#fff" stroke-width="4" stroke-linejoin="round"/>
-  <path d="M26 47 L33 40 L38 44 L48 33" stroke="#7c3aed" stroke-width="4.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="10" y="18" width="52" height="36" rx="8" fill="#fff"/>
+  <path d="M19 45 L29 35 L36 41 L50 27" stroke="#7c3aed" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
