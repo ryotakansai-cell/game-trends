@@ -5,7 +5,7 @@
 // 比べる相手は24時間前（同じ時刻）だけ。18時間前や6時間前と比べると、時間帯の違いを「急上昇」と見てしまう
 // （2026-10-11 に試したところ、Steam で6時間で +134%、Twitch で深夜と夜を比べて VALORANT が急増、のように出た。
 // 全世界の人数は日本の昼とヨーロッパの昼で遊ぶ人が入れ替わり、日本の配信も深夜と夜でゲームの顔ぶれが違う）。
-// 24時間前の記録がまだ無いあいだは「比べる記録が無い」（null）を返し、ページは「記録がたまるまで待って」と出す。
+// 24時間前の記録がまだ無いあいだや、大きな動きが無いときは空を返し、ページは枠ごと出さない。
 // 条件を満たすものが無いときは空を返す。無理に小さな動きで埋めると、ただの飾りになるため。
 import { unstable_cache } from "next/cache";
 import { getDbClient } from "@/lib/db";
@@ -282,16 +282,10 @@ function pickRoundRobin(lists: BuzzItem[][]): BuzzItem[] {
   return picked;
 }
 
-export type GameBuzzResult = {
-  items: BuzzItem[];
-  /** どれか1つでも24時間前と比べられたか。false なら「記録がたまるまで待って」と出す */
-  ready: boolean;
-};
-
 /** いま話題のゲーム（最大5つ）。元のデータは毎時なので、1時間作り置きする
  *  （ページは5分ごとに作り直すが、ここで毎回 DB を数千行読まないため） */
 export const getGameBuzz = unstable_cache(
-  async (): Promise<GameBuzzResult> => {
+  async (): Promise<BuzzItem[]> => {
     const results = await Promise.allSettled([
       twitchSurges(),
       playBuzz("steam", "Steam", 3000, "/games/steam"),
@@ -299,15 +293,11 @@ export const getGameBuzz = unstable_cache(
       playBuzz("roblox", "Roblox", 5000, "/games/roblox"),
     ]);
     // 1つの配信元が失敗しても、ほかの配信元の話題は出す
-    const values = results.map((r) =>
-      r.status === "fulfilled" ? r.value : null,
+    return pickRoundRobin(
+      results.map((r) => (r.status === "fulfilled" ? (r.value ?? []) : [])),
     );
-    return {
-      items: pickRoundRobin(values.map((v) => v ?? [])),
-      ready: values.some((v) => v !== null),
-    };
   },
   // 選び方を変えたら鍵も変える（作り置きの鍵は外側のこの関数で決まり、中の関数を直しても古い結果が残るため）
-  ["game-buzz-v4"],
+  ["game-buzz-v5"],
   { revalidate: 3600 },
 );
