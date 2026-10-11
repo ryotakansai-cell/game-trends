@@ -8,14 +8,14 @@ import {
 import {
   getClipsInRange,
   getGamesByIds,
-  getUsersByLogin,
   getVideosByUser,
   isRealGame,
   type TwitchClip,
   type TwitchGame,
   type TwitchVideo,
 } from "@/lib/twitch";
-import { getChannelIcons } from "@/lib/youtube";
+import { accountKey } from "@/lib/platforms";
+import { getAccountIcons } from "@/lib/platform-loaders";
 import type { SameGameEntry } from "@/components/SameGameStreamers";
 
 /** グラフで選べる日か（2026-10-10 の形で、グラフの期間内の配信した日） */
@@ -97,24 +97,10 @@ export async function loadStatsExtras({
   }
 
   // 同じゲームの人のアイコン（Twitch は100人まで1回、YouTube は50件で1ユニット・1日作り置き）
-  const [twitchUsers, youtubeIcons] = await Promise.all([
-    getUsersByLogin(
-      sameGameRows
-        .filter((r) => r.platform === "twitch" && r.login)
-        .map((r) => r.login!),
-    ).catch(() => new Map()),
-    getChannelIcons(
-      sameGameRows
-        .filter((r) => r.platform === "youtube")
-        .map((r) => r.platformId),
-    ).catch(() => new Map<string, string>()),
-  ]);
+  const icons = await getAccountIcons(sameGameRows);
   const sameGame: SameGameEntry[] = sameGameRows.map((r) => ({
     ...r,
-    iconUrl:
-      r.platform === "twitch"
-        ? twitchUsers.get(r.login ?? "")?.profile_image_url
-        : youtubeIcons.get(r.platformId),
+    iconUrl: icons.get(accountKey(r)),
   }));
 
   return {

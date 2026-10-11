@@ -8,21 +8,20 @@ import {
   getDailySummary,
   getDayRange,
   isAvailableDay,
-  entryHref,
   dayTitle,
   shiftDay,
   type DailyEntry,
 } from "@/lib/daily";
 import {
-  getUsersByLogin,
   getGamesByIds,
   boxArt,
   formatViewers,
   type TwitchGame,
 } from "@/lib/twitch";
-import { getChannelIcons } from "@/lib/youtube";
+import { accountHref, accountKey } from "@/lib/platforms";
+import { getAccountIcons } from "@/lib/platform-loaders";
 import { PageHeader } from "@/components/PageHeader";
-import { TwitchIcon, YouTubeIcon } from "@/components/PlatformIcons";
+import { PlatformIcon } from "@/components/PlatformIcons";
 
 // 過去の日の内容は変わらないので、初めて開かれたときに作って1日作り置きする。
 // generateStaticParams が空の配列を返すと「ビルド時には作らず、開かれたら作って保存する」になる
@@ -90,12 +89,12 @@ function EntryRow({
       </div>
       <div className="min-w-0 flex-1">
         <Link
-          href={entryHref(entry)}
+          href={accountHref(entry)}
           className="flex min-w-0 items-center gap-1.5 text-sm text-gray-100 transition hover:text-purple-300"
         >
           <span className="truncate">{entry.displayName}</span>
           <span className="shrink-0 text-gray-500">
-            {entry.platform === "twitch" ? <TwitchIcon /> : <YouTubeIcon />}
+            <PlatformIcon platform={entry.platform} />
           </span>
         </Link>
         {detail && (
@@ -142,28 +141,17 @@ export default async function DailyPage({ params }: Props) {
     ...summary.rising,
     ...summary.personalBests,
   ];
-  const [range, twitchUsers, youtubeIcons, games] = await Promise.all([
+  const [range, icons, games] = await Promise.all([
     getDayRange(),
-    getUsersByLogin([
-      ...new Set(
-        all
-          .filter((e) => e.platform === "twitch" && e.login)
-          .map((e) => e.login!),
-      ),
-    ]).catch(() => new Map()),
-    getChannelIcons(
-      all.filter((e) => e.platform === "youtube").map((e) => e.platformId),
-    ).catch(() => new Map<string, string>()),
+    // 同じ人が複数の一覧に出るので、配信元ごとに重複を除いてから取る
+    getAccountIcons([...new Map(all.map((e) => [accountKey(e), e])).values()]),
     getGamesByIds([
       ...summary.games.map((g) => g.gameId),
       ...all.map((e) => e.topGameId).filter((id): id is string => id !== null),
     ]).catch(() => new Map<string, TwitchGame>()),
   ]);
 
-  const iconOf = (e: DailyEntry) =>
-    e.platform === "twitch"
-      ? twitchUsers.get(e.login ?? "")?.profile_image_url
-      : youtubeIcons.get(e.platformId);
+  const iconOf = (e: DailyEntry) => icons.get(accountKey(e));
   const gameName = (e: DailyEntry) =>
     e.topGameId ? games.get(e.topGameId)?.name : undefined;
 

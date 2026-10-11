@@ -1,8 +1,8 @@
-// DBを読むために、lib/db.ts の接続関数を借りてくる。
-// （このファイルで唯一、Twitch APIではなく自前のDBを見る処理のために使う）
-import { getDbClient } from "@/lib/db";
-import { pastWindow } from "@/lib/snapshot-range";
-import type { PlatformAccount, PlatformContent } from "@/lib/platform";
+import type {
+  ContentItem,
+  PlatformAccount,
+  PlatformContent,
+} from "@/lib/platform-content";
 
 const TOKEN_URL = "https://id.twitch.tv/oauth2/token";
 const HELIX = "https://api.twitch.tv/helix";
@@ -512,113 +512,6 @@ export async function getStreamsByUserIds(userIds: string[]) {
 }
 
 // ============================================
-// 急上昇ランキング用（Twitch APIではなく、DBに貯めた履歴を読む）
-// ============================================
-
-// この関数が返す「1行分」の形。
-// SQLの SELECT で並べた列名と、ここのプロパティ名が一致している必要がある。
-export type RisingStreamer = {
-  streamer_id: string;
-  login: string; // URL用の名前。/streamers/faker のリンクに使う
-  display_name: string; // 画面に出す表示名
-  title: string | null; // 配信タイトル。列を追加する前の古い行はnullになる
-  current_viewers: number; // 今の視聴者数
-  past_viewers: number; // 24時間前の視聴者数
-  current_at: string; // 「今」の記録がいつ取られたか
-  past_at: string; // 「24時間前」の記録が実際にいつ取られたか
-  growth_rate: number; // 増加率（0.35 なら 35%増）
-};
-
-/** 24時間前と比べて視聴者数が伸びている配信者を取得する */
-export async function getRisingStreamers(
-  minViewers = 200, // 日本語の配信は10人以上も記録しているので、小さな配信の上下動で埋まらないよう絞る
-  limit = 20, // 何件返すか
-  language?: string, // "ja"を渡すと日本語配信だけ。省略すると全言語
-): Promise<RisingStreamer[]> {
-  const db = getDbClient();
-
-  // 24時間前の前後3時間だけを読む（全履歴を読まないため。lib/snapshot-range.ts）
-  const [pastFrom, pastTo] = pastWindow(3);
-
-  const sql = `
-    -- ⓪ Twitch の最新の収集時刻。captured_at の索引を新しい順にたどり、
-    --    最初に見つかった Twitch の行で止まるので、全履歴を読まずに済む
-    WITH latest_at AS (
-      SELECT l.captured_at AS at
-      FROM live_snapshots l
-      JOIN accounts a ON a.id = l.account_id
-      WHERE a.platform = 'twitch'
-      ORDER BY l.captured_at DESC
-      LIMIT 1
-    ),
-
-    -- ① 最新の収集に含まれている配信者（＝最後の観測時点で配信中）。
-    --    cron は1回分を同じ captured_at で保存するので、一致で取れる
-    latest AS (
-      SELECT
-        l.account_id,
-        l.viewers AS current_viewers,
-        l.title,
-        l.captured_at AS current_at
-      FROM live_snapshots l
-      JOIN accounts a ON a.id = l.account_id
-      WHERE l.captured_at = (SELECT at FROM latest_at)
-        AND a.platform = 'twitch'
-    ),
-
-    -- ② 配信者ごとに「24時間前に一番近い記録」を特定する。
-    --    範囲は前後3時間に絞ってある（それより遠い記録は比較に使わないため）
-    past AS (
-      SELECT
-        l.account_id,
-        l.viewers AS past_viewers,
-        l.captured_at AS past_at,
-        -- 「24時間前からのズレ（秒）」が小さい順に採番
-        ROW_NUMBER() OVER (
-          PARTITION BY l.account_id
-          ORDER BY ABS(strftime('%s', l.captured_at) - strftime('%s', 'now', '-24 hours'))
-        ) AS rn
-      FROM live_snapshots l
-      JOIN accounts a ON a.id = l.account_id
-      WHERE a.platform = 'twitch'
-        AND l.captured_at BETWEEN ? AND ?
-    )
-
-    -- ③ ①と②を突き合わせて、増加率を計算する
-    SELECT
-      -- 列名は移行前と同じにする。呼び出し側（trending/page.tsx）は変更不要
-      a.platform_id AS streamer_id,
-      a.login,
-      a.display_name,
-      l.title,
-      l.current_viewers,
-      p.past_viewers,
-      l.current_at,
-      p.past_at,
-      -- CASTしないと整数同士の割り算になり0に切り捨てられる（C#のint/intと同じ）
-      (CAST(l.current_viewers AS REAL) - p.past_viewers) / p.past_viewers AS growth_rate
-    FROM latest l
-    JOIN past p ON p.account_id = l.account_id AND p.rn = 1
-    JOIN accounts a ON a.id = l.account_id
-    WHERE l.current_viewers >= ?
-      AND p.past_viewers > 0
-      -- 増えている人だけ（急上昇ページなので、減っている人は載せない）
-      AND l.current_viewers > p.past_viewers
-      ${language ? "AND a.language = ?" : ""}
-    ORDER BY growth_rate DESC
-    LIMIT ?
-  `;
-
-  // ?の数に合わせて渡す値を変える。順番はSQL内の ? の出現順と一致させる
-  const args = language
-    ? [pastFrom, pastTo, minViewers, language, limit]
-    : [pastFrom, pastTo, minViewers, limit];
-
-  const result = await db.execute({ sql, args });
-  return result.rows as unknown as RisingStreamer[];
-}
-
-// ============================================
 // クリエイターページ用（共通の形に変換して返す）
 // ============================================
 
@@ -644,13 +537,13 @@ export async function getTwitchContent(
 
       // クリップとアーカイブを、同じ ContentItem の形に揃えて1本にまとめる。
       // ページ側で混ぜて並び替えるため、種別は kindLabel で見分ける
-      const items = [
+      const items: ContentItem[] = [
         ...clips.map((c) => ({
           id: c.id,
           title: c.title,
           url: c.url,
           thumbnailUrl: c.thumbnail_url,
-          platform: "twitch",
+          platform: "twitch" as const,
           platformLabel: "Twitch",
           relation: account.relation,
           kindLabel: "クリップ",
@@ -664,7 +557,7 @@ export async function getTwitchContent(
           title: v.title,
           url: v.url,
           thumbnailUrl: videoThumb(v.thumbnail_url),
-          platform: "twitch",
+          platform: "twitch" as const,
           platformLabel: "Twitch",
           relation: account.relation,
           kindLabel: "アーカイブ",

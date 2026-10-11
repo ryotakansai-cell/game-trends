@@ -91,7 +91,8 @@ components/
 ├── PageHeader.tsx              各ページの見出し（紫の小さな英字 + 白い見出し + 右上に地域 + 下に絞り込み）
 ├── SegmentedTabs.tsx           日本/Global の切り替え（つながった2択スイッチ）
 ├── FilterPills.tsx             配信元の丸ボタン（すべて/Twitch/YouTube。増えても折り返す）
-├── PlatformIcons.tsx           配信元の単色アイコン（色は付けず currentColor）
+├── PlatformIcons.tsx           配信元の単色アイコン（色は付けず currentColor）。PlatformIcon で配信元から引ける
+├── PlatformFilter.tsx          配信元の絞り込み（すべて/Twitch/YouTube/…。台帳の順に並ぶ）
 ├── RelativeTime.tsx            「◯分前」（ブラウザ側で計算。作り置きされても数字が古くならない）
 ├── StreamStats.tsx             配信者ページの「配信の記録」（数字・日ごとの最高同接の棒グラフ・よく遊んだゲーム・比較表）
 ├── ShareOnX.tsx                「Xで共有」ボタン（X の投稿画面を開くだけ。API を使わない）
@@ -101,7 +102,10 @@ components/
 lib/
 ├── twitch.ts                   Twitch APIとの通信（唯一の窓口）
 ├── youtube.ts                  YouTube Data API v3との通信 + DBからのランキング読み取り
-├── platform.ts                 プラットフォーム共通の型（PlatformContent など）。処理は書かない
+├── platforms.ts                配信元の台帳（名前・URL・サムネ・日本の判定など。API や DB を読まない）
+├── platform-loaders.ts         配信元ごとの読み取りの振り分け（アイコン・統合ページの中身・ライブランキング）
+├── platform-content.ts         統合ページの共通の型（PlatformContent など）。処理は書かない
+├── rising.ts                   急上昇（24時間前との比較。全配信元で1つの SQL）
 ├── creators.ts                 人物とアカウントのDB読み取り、各libへの振り分け
 ├── daily-stats.ts              日ごとの集計（まとめる・古い記録を消す）
 ├── daily.ts                    日付ごとのまとめページのデータ（日本の配信者に絞る JAPAN_FILTER もここ）
@@ -184,9 +188,21 @@ Twitch のアーカイブは Twitch 側で7〜60日で消えるので、リン�
 毎時の書き込みは2,000行を超えるので、名前などが前回と同じならアカウントを上書きしない
 （UPSERT の末尾の `WHERE ... IS NOT excluded...`）。Turso の書き込み枠は月1,000万行。
 
-表示側はプラットフォームごとの違いを `lib/platform.ts` の `PlatformContent` という
-共通の型に吸収する。ツイキャスを足すときは `lib/twitcasting.ts` に同じ形を返す関数を
-1つ書き、`lib/creators.ts` の振り分けに数行足すだけで、ページ側は変更不要。
+**配信元ごとの違いは「台帳」に集め、ページに `platform === "twitch" ? … : …` を書かない。**
+以前はトップ・急上昇・日付のまとめ・配信者一覧など19ファイルに分かれ道が散らばっていて、
+配信元を1つ足すたびに10か所以上を直す必要があった（2026-10-11 に整理）。
+
+- `lib/platforms.ts`：名前・サイト内のページのURL・配信のURL・サムネイル・「日本の配信」の SQL・
+  急上昇の設定など、API や DB を読まない情報。`PLATFORMS[platform].label` のように引く
+- `lib/platform-loaders.ts`：アイコン・統合ページの中身・ライブランキングを、配信元ごとの lib に振り分ける
+- `components/PlatformIcons.tsx` の `PlatformIcon`、`components/PlatformFilter.tsx`（すべて/Twitch/YouTube/… のボタン）
+- 急上昇は `lib/rising.ts` の1つの SQL を配信元ごとに呼ぶ（設定の違いは台帳の `rising`）
+
+どれも `Record<PlatformId, …>` なので、`PLATFORM_IDS` に配信元を足すと、書き忘れた所が型チェックで止まる。
+配信元を足す手順：`PLATFORM_IDS` に足す → 型チェックで止まった所（台帳・LOADERS・アイコン）を埋める →
+`lib/<配信元>.ts` に収集と読み取りを書く → cron を足す。ページは触らない。
+統合ページの中身は `lib/platform-content.ts` の `PlatformContent` という共通の形で返す。
+Twitch だけの機能（その日のアーカイブとクリップ）のように、配信元に固有のものは分かれ道のままでよい。
 
 YouTubeは Twitch と仕組みが違う。「今ライブ中の一覧」を取る `search.list` は
 キーワード（`q`）が実質必須で、地域・カテゴリだけでは0件になる。1回100ユニット

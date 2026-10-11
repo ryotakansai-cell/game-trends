@@ -1,6 +1,7 @@
 // 配信元のボタンに付ける単色アイコン。
 // 各サービスの色は使わず currentColor にしてある（ボタンの紫・グレーに合わせて統一感を出すため）。
 // 形は公式ロゴを簡略化したもので、「どのサービスか」が一目で分かることだけを目的にしている
+import type { PlatformId } from "@/lib/platforms";
 
 const props = {
   width: 14,
@@ -23,3 +24,14 @@ export const YouTubeIcon = () => (
     <path d="M21.6 7.2a2.5 2.5 0 0 0-1.8-1.8C18.2 5 12 5 12 5s-6.2 0-7.8.4a2.5 2.5 0 0 0-1.8 1.8C2 8.8 2 12 2 12s0 3.2.4 4.8a2.5 2.5 0 0 0 1.8 1.8C5.8 19 12 19 12 19s6.2 0 7.8-.4a2.5 2.5 0 0 0 1.8-1.8c.4-1.6.4-4.8.4-4.8s0-3.2-.4-4.8ZM10 15V9l5.2 3L10 15Z" />
   </svg>
 );
+
+/** 配信元 → アイコン。配信元を足したら、ここにも1行足す（足し忘れると型チェックで止まる） */
+const ICONS: Record<PlatformId, () => React.JSX.Element> = {
+  twitch: TwitchIcon,
+  youtube: YouTubeIcon,
+};
+
+export function PlatformIcon({ platform }: { platform: PlatformId }) {
+  const Icon = ICONS[platform];
+  return <Icon />;
+}

@@ -1,5 +1,6 @@
 import { getDbClient } from "@/lib/db";
 import { jstDay } from "@/lib/snapshot-range";
+import { toPlatformId, type PlatformId } from "@/lib/platforms";
 
 // 日付ごとのまとめページ（/daily/[date]）のデータ。
 // 日ごとの集計（daily_stats）から作るので、まとめ終わった日（昨日まで）だけが対象。
@@ -17,7 +18,7 @@ export const JAPAN_FILTER = `
   )`;
 
 export type DailyEntry = {
-  platform: "twitch" | "youtube";
+  platform: PlatformId;
   platformId: string;
   login: string | null;
   displayName: string;
@@ -80,7 +81,7 @@ const previousDay = (day: string) => shiftDay(day, -1);
 
 function toEntry(r: Record<string, unknown>): DailyEntry {
   return {
-    platform: r.platform === "youtube" ? "youtube" : "twitch",
+    platform: toPlatformId(r.platform),
     platformId: String(r.platform_id),
     login: r.login ? String(r.login) : null,
     displayName: String(r.display_name),
@@ -213,12 +214,4 @@ export async function getDailyHeadline(day: string, n = 3) {
     top: top.rows.map(toEntry),
     streamers: Number(count.rows[0]?.n ?? 0),
   };
-}
-
-/** 配信者のページのURL（名寄せ済みなら統合ページ） */
-export function entryHref(e: DailyEntry) {
-  if (e.creatorId !== null) return `/creators/${e.creatorId}`;
-  return e.platform === "twitch"
-    ? `/streamers/${e.login}`
-    : `/youtube/${e.platformId}`;
 }

@@ -1,22 +1,19 @@
 import Image from "next/image";
 import Link from "next/link";
-import {
-  getTopStreams,
-  getUsersByLogin,
-  streamThumb,
-  elapsedSince,
-  formatViewers,
-} from "@/lib/twitch";
-import {
-  getTopYouTubeLive,
-  youtubeThumbnail,
-  getChannelIcons,
-} from "@/lib/youtube";
+import { formatViewers } from "@/lib/twitch";
 import { getCreatorIdMap } from "@/lib/creators";
+import {
+  PLATFORM_IDS,
+  PLATFORMS,
+  accountHref,
+  accountKey,
+  isPlatformId,
+  type PlatformId,
+} from "@/lib/platforms";
+import { LOADERS, getAccountIcons } from "@/lib/platform-loaders";
 import { SegmentedTabs } from "@/components/SegmentedTabs";
 import { PageHeader } from "@/components/PageHeader";
-import { FilterPills } from "@/components/FilterPills";
-import { TwitchIcon, YouTubeIcon } from "@/components/PlatformIcons";
+import { PlatformFilter } from "@/components/PlatformFilter";
 import { RelativeTime } from "@/components/RelativeTime";
 
 export const revalidate = 180;
@@ -30,27 +27,10 @@ type Props = {
   searchParams: Promise<{ lang?: string; platform?: string }>;
 };
 
-type Platform = "all" | "twitch" | "youtube";
-
-/** 表示用に、TwitchとYouTubeの形を1つに揃えたもの */
-type UnifiedEntry = {
-  key: string;
-  platform: "twitch" | "youtube";
-  title: string;
-  viewers: number;
-  thumbnailUrl: string;
-  watchHref: string;
-  channelName: string;
-  channelHref?: string;
-  channelIconUrl?: string;
-  gameName?: string;
-  gameHref?: string;
-  elapsed?: string;
-  isCreator?: boolean; // 名寄せ済み＝統合ページへ飛ぶ
-};
+const LIMIT = 40;
 
 /** 選んだタブを維持したまま、リンク先のURLを組み立てる */
-function buildHref(platform: Platform, isJapanese: boolean) {
+function buildHref(platform: PlatformId | "all", isJapanese: boolean) {
   const params = new URLSearchParams();
   if (platform !== "all") params.set("platform", platform);
   if (!isJapanese) params.set("lang", "all");
@@ -61,85 +41,34 @@ function buildHref(platform: Platform, isJapanese: boolean) {
 export default async function Home({ searchParams }: Props) {
   const { lang, platform } = await searchParams;
   const isJapanese = lang !== "all";
-  const selectedPlatform: Platform =
-    platform === "twitch" || platform === "youtube" ? platform : "all";
+  const selected = isPlatformId(platform) ? platform : "all";
+  const targets = selected === "all" ? [...PLATFORM_IDS] : [selected];
 
-  const showTwitch = selectedPlatform !== "youtube";
-  const showYouTube = selectedPlatform !== "twitch";
-
-  const [twitchStreams, youtubeVideos] = await Promise.all([
-    showTwitch
-      ? getTopStreams({ language: isJapanese ? "ja" : undefined, limit: 40 })
-      : Promise.resolve([]),
-    showYouTube
-      ? getTopYouTubeLive(isJapanese ? "jp" : undefined, 40)
-      : Promise.resolve([]),
-  ]);
-
-  const [users, youtubeIcons, creatorIds] = await Promise.all([
-    getUsersByLogin(twitchStreams.map((s) => s.user_login)),
-    getChannelIcons(youtubeVideos.map((v) => v.channel_id)),
-    // 名寄せ済みかどうかを1回のDB問い合わせでまとめて調べる
-    getCreatorIdMap([
-      ...twitchStreams.map((s) => ({
-        platform: "twitch",
-        platformId: s.user_id,
-      })),
-      ...youtubeVideos.map((v) => ({
-        platform: "youtube",
-        platformId: v.channel_id,
-      })),
-    ]),
-  ]);
-
-  const twitchEntries: UnifiedEntry[] = twitchStreams.map((s) => {
-    // 名寄せ済みなら統合ページへ、まだならこれまでどおりTwitch配信者ページへ
-    const creatorId = creatorIds.get(`twitch:${s.user_id}`);
-    return {
-      key: `twitch-${s.id}`,
-      platform: "twitch",
-      title: s.title,
-      viewers: s.viewer_count,
-      thumbnailUrl: streamThumb(s.thumbnail_url),
-      watchHref: `https://twitch.tv/${s.user_login}`,
-      channelName: s.user_name,
-      channelHref: creatorId
-        ? `/creators/${creatorId}`
-        : `/streamers/${s.user_login}`,
-      isCreator: creatorId !== undefined,
-      channelIconUrl: users.get(s.user_login)?.profile_image_url,
-      gameName: s.game_name || undefined,
-      gameHref: s.game_id ? `/games/${s.game_id}` : undefined,
-      elapsed: elapsedSince(s.started_at),
-    };
-  });
-
-  const youtubeEntries: UnifiedEntry[] = youtubeVideos.map((v) => {
-    const creatorId = creatorIds.get(`youtube:${v.channel_id}`);
-    return {
-      key: `youtube-${v.video_id}`,
-      platform: "youtube",
-      title: v.title,
-      viewers: v.viewers,
-      thumbnailUrl: youtubeThumbnail(v.video_id),
-      watchHref: `https://www.youtube.com/watch?v=${v.video_id}`,
-      channelName: v.channel_title,
-      // 名寄せ済みなら統合ページ、そうでなければ YouTube チャンネルのページ（配信の記録つき）
-      channelHref: creatorId
-        ? `/creators/${creatorId}`
-        : `/youtube/${v.channel_id}`,
-      isCreator: creatorId !== undefined,
-      channelIconUrl: youtubeIcons.get(v.channel_id),
-    };
-  });
-
-  const entries = [...twitchEntries, ...youtubeEntries]
+  // 配信元ごとの上位を同時に取り、視聴者数で混ぜて並べる。
+  // 取り方（API か DB か）は配信元ごとに違うが、LOADERS が同じ形（LiveEntry）にそろえて返す。
+  // 1つの配信元が取れなくても、ほかの配信元は出す
+  const lists = await Promise.all(
+    targets.map((p) => LOADERS[p].live(isJapanese, LIMIT).catch(() => [])),
+  );
+  const entries = lists
+    .flat()
     .sort((a, b) => b.viewers - a.viewers)
-    .slice(0, 40);
+    .slice(0, LIMIT);
+
+  // アイコンと名寄せは、並べた後の上位だけ調べる（表に出ない分まで API や DB を読まない）
+  const [icons, creatorIds] = await Promise.all([
+    getAccountIcons(entries.filter((e) => !e.iconUrl)),
+    getCreatorIdMap(entries),
+  ]);
 
   const totalViewers = entries.reduce((sum, e) => sum + e.viewers, 0);
-  // YouTube の行はどれも同じ収集回のものなので、先頭の時刻がそのまま最終収集の時刻
-  const youtubeAt = youtubeVideos[0]?.captured_at;
+  // DB の毎時の記録から作った配信元（YouTube）の、最終収集の時刻
+  const collectedAt = lists
+    .flat()
+    .map((e) => e.capturedAt)
+    .filter((t): t is string => !!t)
+    .sort()
+    .at(-1);
 
   return (
     <main className="mx-auto w-full max-w-6xl px-6 py-6 sm:py-12">
@@ -153,15 +82,16 @@ export default async function Home({ searchParams }: Props) {
               {formatViewers(totalViewers)}人
             </span>
             が視聴中
-            {/* データの鮮度。Twitch は表示のたびに API を読む（返事の作り置きは最大5分）、
-                YouTube は毎時の収集結果を DB から読むので、それぞれの更新間隔を出す */}
+            {/* データの鮮度。表示のたびに API を読む配信元と、毎時の収集結果を DB から読む配信元があるので、
+                それぞれの更新間隔を出す */}
             <span className="mt-0.5 block text-gray-500">
-              更新：{showTwitch && "Twitch 5分ごと"}
-              {showTwitch && showYouTube && " / "}
-              {showYouTube && "YouTube 毎時"}
-              {youtubeAt && (
+              更新：
+              {targets
+                .map((p) => `${PLATFORMS[p].label} ${PLATFORMS[p].liveUpdate}`)
+                .join(" / ")}
+              {collectedAt && (
                 <>
-                  （<RelativeTime iso={youtubeAt} />）
+                  （<RelativeTime iso={collectedAt} />）
                 </>
               )}
             </span>
@@ -172,124 +102,111 @@ export default async function Home({ searchParams }: Props) {
             options={[
               {
                 label: "日本",
-                href: buildHref(selectedPlatform, true),
+                href: buildHref(selected, true),
                 active: isJapanese,
               },
               {
                 label: "Global",
-                href: buildHref(selectedPlatform, false),
+                href: buildHref(selected, false),
                 active: !isJapanese,
               },
             ]}
           />
         }
         filters={
-          <FilterPills
-            options={[
-              {
-                label: "すべて",
-                href: buildHref("all", isJapanese),
-                active: selectedPlatform === "all",
-              },
-              {
-                label: "Twitch",
-                icon: <TwitchIcon />,
-                href: buildHref("twitch", isJapanese),
-                active: selectedPlatform === "twitch",
-              },
-              {
-                label: "YouTube",
-                icon: <YouTubeIcon />,
-                href: buildHref("youtube", isJapanese),
-                active: selectedPlatform === "youtube",
-              },
-            ]}
+          <PlatformFilter
+            selected={selected}
+            hrefFor={(p) => buildHref(p, isJapanese)}
           />
         }
       />
 
       <ul className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {entries.map((entry, index) => (
-          <li key={entry.key} className="group">
-            <a href={entry.watchHref} target="_blank" rel="noopener noreferrer">
-              <div className="relative aspect-video overflow-hidden rounded-lg border border-white/10 bg-white/5">
-                <Image
-                  src={entry.thumbnailUrl}
-                  alt={entry.title}
-                  fill
-                  className="object-cover transition duration-300 group-hover:scale-105"
-                  unoptimized
-                />
-                <span className="absolute left-2 top-2 rounded bg-black/70 px-2 py-0.5 text-xs font-bold text-white">
-                  {index + 1}
-                </span>
-                <span className="absolute right-2 top-2 flex items-center gap-1 rounded bg-red-600/90 px-2 py-0.5 text-xs font-bold text-white">
-                  <span className="h-1.5 w-1.5 rounded-full bg-white" />
-                  {formatViewers(entry.viewers)}
-                </span>
-                {selectedPlatform === "all" && (
-                  <span className="absolute bottom-2 right-2 rounded bg-black/70 px-2 py-0.5 text-xs text-gray-200">
-                    {entry.platform === "twitch" ? "Twitch" : "YouTube"}
+        {entries.map((entry, index) => {
+          const creatorId = creatorIds.get(accountKey(entry)) ?? null;
+          const iconUrl = entry.iconUrl ?? icons.get(accountKey(entry));
+          return (
+            <li key={entry.key} className="group">
+              <a
+                href={entry.watchHref}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <div className="relative aspect-video overflow-hidden rounded-lg border border-white/10 bg-white/5">
+                  <Image
+                    src={entry.thumbnailUrl}
+                    alt={entry.title}
+                    fill
+                    className="object-cover transition duration-300 group-hover:scale-105"
+                    unoptimized
+                  />
+                  <span className="absolute left-2 top-2 rounded bg-black/70 px-2 py-0.5 text-xs font-bold text-white">
+                    {index + 1}
                   </span>
-                )}
-                {entry.elapsed && (
-                  <span className="absolute bottom-2 left-2 rounded bg-black/70 px-2 py-0.5 text-xs text-gray-200">
-                    {entry.elapsed}
+                  <span className="absolute right-2 top-2 flex items-center gap-1 rounded bg-red-600/90 px-2 py-0.5 text-xs font-bold text-white">
+                    <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                    {formatViewers(entry.viewers)}
                   </span>
-                )}
-              </div>
-            </a>
+                  {selected === "all" && (
+                    <span className="absolute bottom-2 right-2 rounded bg-black/70 px-2 py-0.5 text-xs text-gray-200">
+                      {PLATFORMS[entry.platform].label}
+                    </span>
+                  )}
+                  {entry.elapsed && (
+                    <span className="absolute bottom-2 left-2 rounded bg-black/70 px-2 py-0.5 text-xs text-gray-200">
+                      {entry.elapsed}
+                    </span>
+                  )}
+                </div>
+              </a>
 
-            <p
-              className="mt-3 truncate font-bold text-gray-100"
-              title={entry.title}
-            >
-              {entry.title}
-            </p>
+              <p
+                className="mt-3 truncate font-bold text-gray-100"
+                title={entry.title}
+              >
+                {entry.title}
+              </p>
 
-            {/* 配信者名とゲーム名は、長ければ「…」で省略する。名前のリンクに shrink-0 が
-                付いていた頃は縮まずに画面の外まで伸び、スマホでページごと横にずれていた。
-                縮むのは文字だけで、アイコンは shrink-0 で形を保つ */}
-            <div className="mt-2 flex min-w-0 items-center gap-2 text-sm">
-              {/* 配信者のリンク先はすべてサイト内（名寄せ済み→統合ページ、
-                  それ以外→Twitch の配信者ページ / YouTube チャンネルのページ） */}
-              {entry.channelHref ? (
+              {/* 配信者名とゲーム名は、長ければ「…」で省略する。名前のリンクに shrink-0 が
+                  付いていた頃は縮まずに画面の外まで伸び、スマホでページごと横にずれていた。
+                  縮むのは文字だけで、アイコンは shrink-0 で形を保つ */}
+              <div className="mt-2 flex min-w-0 items-center gap-2 text-sm">
+                {/* 配信者のリンク先はすべてサイト内（名寄せ済み→統合ページ、
+                    それ以外→配信元ごとの配信者ページ） */}
                 <Link
-                  href={entry.channelHref}
+                  href={accountHref({ ...entry, creatorId })}
                   className="flex min-w-0 items-center gap-2 text-gray-300 hover:text-purple-300"
                 >
-                  {entry.channelIconUrl && (
+                  {iconUrl && (
                     <Image
-                      src={entry.channelIconUrl}
+                      src={iconUrl}
                       alt={entry.channelName}
                       width={28}
                       height={28}
                       className={`shrink-0 rounded-full ring-1 ${
-                        entry.isCreator ? "ring-purple-400/70" : "ring-white/10"
+                        creatorId !== null
+                          ? "ring-purple-400/70"
+                          : "ring-white/10"
                       }`}
                     />
                   )}
                   <span className="truncate">{entry.channelName}</span>
                 </Link>
-              ) : (
-                <span className="truncate text-gray-300">
-                  {entry.channelName}
-                </span>
-              )}
-              {entry.gameName && (
-                <>
-                  <span className="text-gray-700">·</span>
-                  <Link
-                    href={entry.gameHref!}
-                    className="truncate text-xs text-gray-200 transition hover:text-purple-400"
-                  >
-                    {entry.gameName}
-                  </Link>
-                </>
-              )}
-            </div>
-          </li>
-        ))}
+                {entry.gameName && entry.gameId && (
+                  <>
+                    <span className="text-gray-700">·</span>
+                    <Link
+                      href={`/games/${entry.gameId}`}
+                      className="truncate text-xs text-gray-200 transition hover:text-purple-400"
+                    >
+                      {entry.gameName}
+                    </Link>
+                  </>
+                )}
+              </div>
+            </li>
+          );
+        })}
       </ul>
     </main>
   );
