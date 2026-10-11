@@ -1,7 +1,12 @@
 // ゲームの「総合」ページの一番上に出す「いま話題のゲーム」を選ぶ。
-// 配信（Twitch の日本語配信）・Steam・Roblox・App Store から、24時間前と比べて大きく動いたものを集め、
+// 配信（Twitch の日本語配信）・Steam・Roblox・App Store から、少し前と比べて大きく動いたものを集め、
 // 配信元が偏らないように順番に1つずつ取って最大5つにする。
-// 条件を満たすものが無ければ空を返し、ページは枠ごと出さない（無理に5つ並べると、ただの飾りになるため）。
+//
+// 比べる相手は24時間前（同じ時刻）だけ。18時間前や6時間前と比べると、時間帯の違いを「急上昇」と見てしまう
+// （2026-10-11 に試したところ、Steam で6時間で +134%、Twitch で深夜と夜を比べて VALORANT が急増、のように出た。
+// 全世界の人数は日本の昼とヨーロッパの昼で遊ぶ人が入れ替わり、日本の配信も深夜と夜でゲームの顔ぶれが違う）。
+// 24時間前の記録がまだ無いあいだは「比べる記録が無い」（null）を返し、ページは「記録がたまるまで待って」と出す。
+// 条件を満たすものが無いときは空を返す。無理に小さな動きで埋めると、ただの飾りになるため。
 import { unstable_cache } from "next/cache";
 import { getDbClient } from "@/lib/db";
 import { getPlayRanking, type PlayPlatform } from "@/lib/play";
@@ -13,7 +18,7 @@ export type BuzzItem = {
   kind: "surge" | "new"; // 急に伸びた / 初めて入った
   label: string; // カードの印（「配信で急増」など）
   name: string;
-  reason: string; // 「日本の配信 300人 → 2,100人」のような根拠の1行
+  reason: string; // 「日本の配信 300人 → 2,100人（24時間）」のような根拠の1行
   source: string; // 「Twitch」「Steam」など
   imageUrl: string | null;
   imageFit: "cover" | "contain"; // 横長の画像（Steam）は切り取らずに収める
@@ -22,25 +27,37 @@ export type BuzzItem = {
 };
 
 const MAX = 5;
+/** 比べる相手（何時間前か）。前から順に試し、そろった記録が見つかった時間で比べる。
+ *  上の理由で今は24時間前だけ。記録の欠けに備えて、24時間前の前後1時間までは探す */
+const COMPARE_HOURS = [24];
 
 // ============================================
 // 配信で急に見られ始めたゲーム（Twitch の日本語配信）
 // ============================================
 
-/** 最新の収集と、24時間前に一番近い収集で、日本語の配信のゲームごとの視聴者数を比べる。
- *  人数ではなく「全体に占める割合」で比べるのは、毎時の記録の件数が時間によって揺れるため
- *  （2026-10-11 の実測で、日本語の配信が202件の回も1,064件の回もあった）。割合なら取りこぼしの影響を受けにくい */
-async function twitchSurges(): Promise<BuzzItem[]> {
-  const db = getDbClient();
-  const latest = await db.execute(
-    `SELECT l.captured_at AS at FROM live_snapshots l
-     JOIN accounts a ON a.id = l.account_id
-     WHERE a.platform = 'twitch' ORDER BY l.captured_at DESC LIMIT 1`,
+type GameCount = Map<string, { viewers: number; streams: number }>;
+
+/** その収集回の、日本語の配信のゲームごとの視聴者数と配信数 */
+async function countByGame(at: string): Promise<GameCount> {
+  const r = await getDbClient().execute({
+    sql: `SELECT l.game_id, SUM(l.viewers) AS v, COUNT(*) AS n
+          FROM live_snapshots l JOIN accounts a ON a.id = l.account_id
+          WHERE a.platform = 'twitch' AND a.language = 'ja'
+            AND l.captured_at = ? AND l.game_id IS NOT NULL
+          GROUP BY l.game_id`,
+    args: [at],
+  });
+  return new Map(
+    r.rows.map((row) => [
+      String(row.game_id),
+      { viewers: Number(row.v), streams: Number(row.n) },
+    ]),
   );
-  const nowAt = latest.rows[0]?.at ? String(latest.rows[0].at) : null;
-  if (!nowAt) return [];
-  const target = new Date(new Date(nowAt).getTime() - 24 * 3600 * 1000);
-  const past = await db.execute({
+}
+
+/** target に一番近い Twitch の収集回（前後1時間以内）。無ければ null */
+async function nearestCapture(target: Date): Promise<string | null> {
+  const r = await getDbClient().execute({
     sql: `SELECT l.captured_at AS at FROM live_snapshots l
           JOIN accounts a ON a.id = l.account_id
           WHERE a.platform = 'twitch' AND l.captured_at BETWEEN ? AND ?
@@ -48,51 +65,61 @@ async function twitchSurges(): Promise<BuzzItem[]> {
           ORDER BY ABS(strftime('%s', l.captured_at) - strftime('%s', ?))
           LIMIT 1`,
     args: [
-      new Date(target.getTime() - 2 * 3600 * 1000).toISOString(),
-      new Date(target.getTime() + 2 * 3600 * 1000).toISOString(),
+      new Date(target.getTime() - 3600 * 1000).toISOString(),
+      new Date(target.getTime() + 3600 * 1000).toISOString(),
       target.toISOString(),
     ],
   });
-  const pastAt = past.rows[0]?.at ? String(past.rows[0].at) : null;
-  if (!pastAt) return [];
+  return r.rows[0]?.at ? String(r.rows[0].at) : null;
+}
 
-  const byGame = async (at: string) => {
-    const r = await db.execute({
-      sql: `SELECT l.game_id, SUM(l.viewers) AS v, COUNT(*) AS n
-            FROM live_snapshots l JOIN accounts a ON a.id = l.account_id
-            WHERE a.platform = 'twitch' AND a.language = 'ja'
-              AND l.captured_at = ? AND l.game_id IS NOT NULL
-            GROUP BY l.game_id`,
-      args: [at],
-    });
-    return new Map(
-      r.rows.map((row) => [
-        String(row.game_id),
-        { viewers: Number(row.v), streams: Number(row.n) },
-      ]),
-    );
-  };
-  const [now, before] = await Promise.all([byGame(nowAt), byGame(pastAt)]);
-  const sum = (
-    m: Map<string, { viewers: number; streams: number }>,
-    key: "viewers" | "streams",
-  ) => [...m.values()].reduce((acc, x) => acc + x[key], 0);
+const sum = (m: GameCount, key: "viewers" | "streams") =>
+  [...m.values()].reduce((acc, x) => acc + x[key], 0);
+
+/** 人数ではなく「全体に占める割合」で比べる。毎時の記録の件数が時間によって揺れるため
+ *  （2026-10-11 の実測で、日本語の配信が202件の回も1,064件の回もあった）。割合なら取りこぼしの影響を受けにくい */
+async function twitchSurges(): Promise<BuzzItem[] | null> {
+  const latest = await getDbClient().execute(
+    `SELECT l.captured_at AS at FROM live_snapshots l
+     JOIN accounts a ON a.id = l.account_id
+     WHERE a.platform = 'twitch' ORDER BY l.captured_at DESC LIMIT 1`,
+  );
+  const nowAt = latest.rows[0]?.at ? String(latest.rows[0].at) : null;
+  if (!nowAt) return null;
+  const now = await countByGame(nowAt);
   const nowTotal = sum(now, "viewers");
-  const pastTotal = sum(before, "viewers");
-  // 24時間前の記録が、いまより明らかに少ない回は比べない（収集の失敗や、記録の範囲を広げる前の時間）。
+  const nowStreams = sum(now, "streams");
+  if (nowTotal === 0) return null;
+
+  // 比べる相手を、24 → 18 → 12 → 6時間前の順に探す。
+  // 記録がいまより明らかに少ない回（収集の失敗や、記録の範囲を広げる前の時間）は使わない。
   // 2026-10-11 に、日本語の配信を77件しか記録していなかった時間と比べて
   // 「Apex Legends の配信が始まった」と誤って出したので、合計人数ではなく配信の件数で見る
-  const nowStreams = sum(now, "streams");
-  const pastStreams = sum(before, "streams");
-  if (nowTotal === 0 || pastStreams < 100 || pastStreams < nowStreams * 0.5)
-    return [];
+  let before: GameCount | null = null;
+  let hours = 0;
+  for (const h of COMPARE_HOURS) {
+    const at = await nearestCapture(
+      new Date(new Date(nowAt).getTime() - h * 3600 * 1000),
+    );
+    if (!at) continue;
+    const counts = await countByGame(at);
+    const streams = sum(counts, "streams");
+    if (streams >= 100 && streams >= nowStreams * 0.5) {
+      before = counts;
+      hours = h;
+      break;
+    }
+  }
+  if (!before) return null;
+  const past = before;
+  const pastTotal = sum(past, "viewers");
 
   const surges = [...now]
     .filter(([, x]) => x.viewers >= 500 && x.streams >= 3)
     .map(([gameId, x]) => {
-      const p = before.get(gameId);
+      const p = past.get(gameId);
       const shareNow = x.viewers / nowTotal;
-      // 24時間前に誰も配信していなかったゲームは、割合を小さな値（0.1%）とみなして比べる
+      // 前に誰も配信していなかったゲームは、割合を小さな値（0.1%）とみなして比べる
       const sharePast = Math.max((p?.viewers ?? 0) / pastTotal, 0.001);
       return { gameId, now: x, past: p, ratio: shareNow / sharePast };
     })
@@ -114,8 +141,8 @@ async function twitchSurges(): Promise<BuzzItem[]> {
         label: s.past ? "配信で急増" : "配信が始まった",
         name: g.name,
         reason: s.past
-          ? `日本の配信 ${formatViewers(s.past.viewers)}人 → ${formatViewers(s.now.viewers)}人`
-          : `日本で${s.now.streams}人が配信中・${formatViewers(s.now.viewers)}人が視聴`,
+          ? `日本の配信 ${formatViewers(s.past.viewers)}人 → ${formatViewers(s.now.viewers)}人（${hours}時間）`
+          : `${hours}時間前は配信なし → いま日本で${s.now.streams}人が配信`,
         source: "Twitch",
         imageUrl: boxArt(g.box_art_url, 300, 400),
         imageFit: "cover" as const,
@@ -134,11 +161,15 @@ async function playBuzz(
   source: string,
   minPlayers: number,
   listHref: string,
-): Promise<BuzzItem[]> {
-  const rows = await getPlayRanking(platform, 100);
-  // 24時間前の記録が1件も無いあいだ（集め始めて1日以内）は、全部が「初登場」に見えるので比べない
-  if (!rows.some((r) => r.rank24hAgo !== null)) return [];
+): Promise<BuzzItem[] | null> {
+  // 24時間前とだけ比べる。全世界の人数は1日の中で大きく波打つので（日本の昼とヨーロッパの昼で遊ぶ人が入れ替わる）、
+  // 6時間前などと比べると時間帯の違いを「急上昇」と見てしまう（2026-10-11 に Steam で +134% などが出た）。
+  // 同じ時刻どうしなら波が打ち消し合う。24時間前の記録が無いあいだは比べない（全部が「初登場」に見えるため）
+  const hours = 24;
+  const rows = await getPlayRanking(platform, 100, 3, hours);
+  if (!rows.some((x) => x.rank24hAgo !== null)) return null;
   const isSteam = platform === "steam";
+  const fit = isSteam ? ("contain" as const) : ("cover" as const);
   const href = (twitchGameId: string | null) =>
     isSteam && twitchGameId ? `/games/${twitchGameId}` : listHref;
 
@@ -159,10 +190,10 @@ async function playBuzz(
       kind: "surge" as const,
       label: "急上昇",
       name: r.name,
-      reason: `${source} 24時間で +${Math.round((r.players! / r.players24hAgo! - 1) * 100)}%（${formatViewers(r.players!)}人）`,
+      reason: `${source} ${hours}時間で +${Math.round((r.players! / r.players24hAgo! - 1) * 100)}%（${formatViewers(r.players!)}人）`,
       source,
       imageUrl: r.imageUrl,
-      imageFit: isSteam ? ("contain" as const) : ("cover" as const),
+      imageFit: fit,
       href: href(r.twitchGameId),
       external: false,
     }));
@@ -173,10 +204,10 @@ async function playBuzz(
       kind: "new" as const,
       label: "初登場",
       name: r.name,
-      reason: `${source} ${r.rank}位に初登場`,
+      reason: `${source} ${r.rank}位に初登場（${hours}時間前は圏外）`,
       source,
       imageUrl: r.imageUrl,
-      imageFit: isSteam ? ("contain" as const) : ("cover" as const),
+      imageFit: fit,
       href: href(r.twitchGameId),
       external: false,
     }));
@@ -187,11 +218,20 @@ async function playBuzz(
 // App Store（売上の順位）
 // ============================================
 
-async function appStoreBuzz(): Promise<BuzzItem[]> {
-  const rows = await getAppStoreRanking("grossing", 30);
-  return rows.flatMap((r): BuzzItem[] => {
+async function appStoreBuzz(): Promise<BuzzItem[] | null> {
+  let rows = null;
+  let hours = 0;
+  for (const h of COMPARE_HOURS) {
+    const r = await getAppStoreRanking("grossing", 30, h);
     // undefined は「比べる記録がまだ無い」（lib/appstore.ts）
-    if (r.rank24hAgo === undefined) return [];
+    if (r.length > 0 && r[0].rank24hAgo !== undefined) {
+      rows = r;
+      hours = h;
+      break;
+    }
+  }
+  if (!rows) return null;
+  return rows.flatMap((r): BuzzItem[] => {
     const base = {
       key: `appstore-${r.id}`,
       name: r.name,
@@ -205,18 +245,18 @@ async function appStoreBuzz(): Promise<BuzzItem[]> {
       return [
         {
           ...base,
-          kind: "new" as const,
+          kind: "new",
           label: "初登場",
-          reason: `App Store セールス ${r.rank}位に初登場`,
+          reason: `App Store セールス ${r.rank}位に初登場（${hours}時間前は圏外）`,
         },
       ];
-    if (r.rank24hAgo - r.rank >= 15)
+    if (r.rank24hAgo !== undefined && r.rank24hAgo - r.rank >= 15)
       return [
         {
           ...base,
-          kind: "surge" as const,
+          kind: "surge",
           label: "急上昇",
-          reason: `App Store セールス ${r.rank24hAgo}位 → ${r.rank}位`,
+          reason: `App Store セールス ${r.rank24hAgo}位 → ${r.rank}位（${hours}時間）`,
         },
       ];
     return [];
@@ -229,7 +269,7 @@ function pickRoundRobin(lists: BuzzItem[][]): BuzzItem[] {
   const picked: BuzzItem[] = [];
   const seen = new Set<string>();
   for (let i = 0; picked.length < MAX; i++) {
-    const before = picked.length;
+    if (lists.every((l) => i >= l.length)) break;
     for (const list of lists) {
       const item = list[i];
       // 同じゲームが Steam の急上昇と Twitch の急増の両方に出たら、先に入った方だけ残す
@@ -238,15 +278,20 @@ function pickRoundRobin(lists: BuzzItem[][]): BuzzItem[] {
         seen.add(item.name);
       }
     }
-    if (picked.length === before && lists.every((l) => i >= l.length)) break;
   }
   return picked;
 }
 
+export type GameBuzzResult = {
+  items: BuzzItem[];
+  /** どれか1つでも24時間前と比べられたか。false なら「記録がたまるまで待って」と出す */
+  ready: boolean;
+};
+
 /** いま話題のゲーム（最大5つ）。元のデータは毎時なので、1時間作り置きする
  *  （ページは5分ごとに作り直すが、ここで毎回 DB を数千行読まないため） */
 export const getGameBuzz = unstable_cache(
-  async (): Promise<BuzzItem[]> => {
+  async (): Promise<GameBuzzResult> => {
     const results = await Promise.allSettled([
       twitchSurges(),
       playBuzz("steam", "Steam", 3000, "/games/steam"),
@@ -254,9 +299,15 @@ export const getGameBuzz = unstable_cache(
       playBuzz("roblox", "Roblox", 5000, "/games/roblox"),
     ]);
     // 1つの配信元が失敗しても、ほかの配信元の話題は出す
-    const lists = results.map((r) => (r.status === "fulfilled" ? r.value : []));
-    return pickRoundRobin(lists);
+    const values = results.map((r) =>
+      r.status === "fulfilled" ? r.value : null,
+    );
+    return {
+      items: pickRoundRobin(values.map((v) => v ?? [])),
+      ready: values.some((v) => v !== null),
+    };
   },
-  ["game-buzz"],
+  // 選び方を変えたら鍵も変える（作り置きの鍵は外側のこの関数で決まり、中の関数を直しても古い結果が残るため）
+  ["game-buzz-v4"],
   { revalidate: 3600 },
 );

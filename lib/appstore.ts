@@ -103,8 +103,9 @@ export type AppStoreRankingRow = AppStoreGame & {
 export async function getAppStoreRanking(
   chart: AppStoreChart,
   limit = 50,
+  compareHours = 24, // 何時間前の順位と比べるか（lib/play.ts の getPlayRanking と同じ）
 ): Promise<AppStoreRankingRow[]> {
-  const rows = await getPlayRanking(PLATFORM[chart], limit, 12);
+  const rows = await getPlayRanking(PLATFORM[chart], limit, 12, compareHours);
   // 24時間前の記録が1件も無いあいだ（集め始めて1日以内・収集が抜けた）は、全部が NEW に見えてしまうので比べない
   const hasPast = rows.some((r) => r.rank24hAgo !== null);
   return rows.map((r) => ({
