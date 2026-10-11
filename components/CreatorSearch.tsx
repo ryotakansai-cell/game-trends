@@ -57,7 +57,7 @@ export function CreatorSearch({ defaultValue }: { defaultValue: string }) {
   return (
     <form
       action="/creators"
-      className="relative mt-6 flex gap-2"
+      className="mt-6 flex items-start gap-2"
       onSubmit={(e) => {
         // 候補を矢印キーで選んでいるときの Enter は、その人のページへ直接行く
         if (show && active >= 0) {
@@ -66,83 +66,91 @@ export function CreatorSearch({ defaultValue }: { defaultValue: string }) {
         }
       }}
     >
-      <input
-        type="search"
-        name="q"
-        value={value}
-        onChange={(e) => {
-          setValue(e.target.value);
-          setOpen(true);
-          setActive(-1);
-        }}
-        onFocus={() => {
-          load();
-          setOpen(true);
-        }}
-        // 候補を押す前に閉じないよう、少し待ってから閉じる
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
-        onKeyDown={(e) => {
-          if (!show) return;
-          if (e.key === "ArrowDown") {
-            e.preventDefault();
-            setActive((i) => (i + 1) % matches.length);
-          } else if (e.key === "ArrowUp") {
-            e.preventDefault();
-            setActive((i) => (i <= 0 ? matches.length - 1 : i - 1));
-          } else if (e.key === "Escape") {
-            setOpen(false);
-          }
-        }}
-        autoComplete="off"
-        role="combobox"
-        aria-expanded={show}
-        aria-controls="creator-suggest"
-        placeholder="配信者の名前で探す"
-        aria-label="配信者の名前で探す"
-        className="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-gray-100 placeholder:text-gray-500 focus:border-purple-400 focus:outline-none"
-      />
+      {/* 入力欄と候補のリストを1つの枠に入れ、リストを入力欄の真下に同じ幅で出す（Google の検索欄と同じ形） */}
+      <div className="relative min-w-0 flex-1">
+        <input
+          type="search"
+          name="q"
+          value={value}
+          onChange={(e) => {
+            setValue(e.target.value);
+            setOpen(true);
+            setActive(-1);
+          }}
+          onFocus={() => {
+            load();
+            setOpen(true);
+          }}
+          // 候補を押す前に閉じないよう、少し待ってから閉じる
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          onKeyDown={(e) => {
+            if (!show) return;
+            if (e.key === "ArrowDown") {
+              e.preventDefault();
+              setActive((i) => (i + 1) % matches.length);
+            } else if (e.key === "ArrowUp") {
+              e.preventDefault();
+              setActive((i) => (i <= 0 ? matches.length - 1 : i - 1));
+            } else if (e.key === "Escape") {
+              setOpen(false);
+            }
+          }}
+          autoComplete="off"
+          role="combobox"
+          aria-expanded={show}
+          aria-controls="creator-suggest"
+          placeholder="配信者の名前で探す"
+          aria-label="配信者の名前で探す"
+          // 候補が開いている間は下の角を四角にして、リストと1枚につながって見えるようにする
+          className={`w-full border bg-white/5 px-4 py-2.5 text-sm text-gray-100 placeholder:text-gray-500 focus:border-purple-400 focus:outline-none ${
+            show
+              ? "rounded-t-lg border-purple-400 bg-[#141414]"
+              : "rounded-lg border-white/10"
+          }`}
+        />
+        {show && (
+          <ul
+            id="creator-suggest"
+            role="listbox"
+            className="absolute left-0 right-0 top-full z-30 overflow-hidden rounded-b-lg border border-t-0 border-purple-400 bg-[#141414] pb-1 shadow-lg"
+          >
+            <li aria-hidden className="mx-4 mb-1 border-t border-white/10" />
+            {matches.map((s, i) => (
+              <li key={s.h} role="option" aria-selected={i === active}>
+                {/* onMouseDown にするのは、入力欄の onBlur で候補が消える前に押せるようにするため */}
+                <a
+                  href={s.h}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    router.push(s.h);
+                  }}
+                  className={`flex items-center gap-2 px-4 py-2 text-sm ${
+                    i === active
+                      ? "bg-white/10 text-purple-300"
+                      : "text-gray-200 hover:text-purple-300"
+                  }`}
+                >
+                  <span className="truncate">{s.n}</span>
+                  <span className="flex shrink-0 gap-1 text-gray-500">
+                    {s.p.filter(isPlatformId).map((p) => (
+                      <PlatformIcon key={p} platform={p} />
+                    ))}
+                  </span>
+                </a>
+              </li>
+            ))}
+            <li className="border-t border-white/5 px-4 pt-1.5 pb-1 text-[11px] text-gray-500">
+              Enter ですべての検索結果を見る
+            </li>
+          </ul>
+        )}
+      </div>
       <button
         type="submit"
-        className="shrink-0 rounded-lg border border-white/10 px-4 text-sm text-gray-300 transition hover:border-purple-400 hover:text-purple-300"
+        className="shrink-0 rounded-lg border border-white/10 px-4 py-2.5 text-sm text-gray-300 transition hover:border-purple-400 hover:text-purple-300"
       >
         検索
       </button>
-
-      {show && (
-        <ul
-          id="creator-suggest"
-          role="listbox"
-          className="absolute left-0 right-0 top-full z-30 mt-1 overflow-hidden rounded-lg border border-white/10 bg-[#141414] py-1 shadow-lg sm:right-auto sm:w-[28rem]"
-        >
-          {matches.map((s, i) => (
-            <li key={s.h} role="option" aria-selected={i === active}>
-              {/* onMouseDown にするのは、入力欄の onBlur で候補が消える前に押せるようにするため */}
-              <a
-                href={s.h}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  router.push(s.h);
-                }}
-                className={`flex items-center gap-2 px-4 py-2 text-sm ${
-                  i === active
-                    ? "bg-white/10 text-purple-300"
-                    : "text-gray-200 hover:text-purple-300"
-                }`}
-              >
-                <span className="truncate">{s.n}</span>
-                <span className="flex shrink-0 gap-1 text-gray-500">
-                  {s.p.filter(isPlatformId).map((p) => (
-                    <PlatformIcon key={p} platform={p} />
-                  ))}
-                </span>
-              </a>
-            </li>
-          ))}
-          <li className="border-t border-white/5 px-4 pt-1.5 pb-1 text-[11px] text-gray-500">
-            Enter ですべての検索結果を見る
-          </li>
-        </ul>
-      )}
     </form>
   );
 }
