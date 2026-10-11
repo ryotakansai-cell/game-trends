@@ -1,4 +1,4 @@
-// サイトのアイコンを、元の絵（design/icon.svg。再生ボタンの中に伸びる折れ線）から作る。
+// サイトのアイコンを、元の絵（design/icon.svg。角丸の四角の中に輪と再生ボタン）から作る。
 // npm run make:icons
 //
 // 作るもの（Next.js はこの名前のファイルを app/ に置くと、自動で <link rel="icon"> などを出す）
