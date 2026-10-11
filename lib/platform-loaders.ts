@@ -20,6 +20,12 @@ import {
   getChannelIcons,
   getYouTubeContent,
 } from "@/lib/youtube";
+import {
+  getRecommendedLives,
+  getTwitcastingContent,
+  toHttps,
+} from "@/lib/twitcasting";
+import { getDbClient } from "@/lib/db";
 
 /** ライブランキングの1件。配信元が違っても同じ形にそろえる */
 export type LiveEntry = AccountRef & {
@@ -101,6 +107,43 @@ export const LOADERS: Record<PlatformId, Loader> = {
           capturedAt: v.captured_at,
         };
       });
+    },
+  },
+  twitcasting: {
+    // API の上限（1分60回）が小さいので、毎時の収集で残した URL を DB から読む（lib/twitcasting.ts の冒頭）
+    icons: async (accounts) => {
+      if (accounts.length === 0) return new Map();
+      const ids = [...new Set(accounts.map((a) => a.platformId))];
+      const r = await getDbClient().execute({
+        sql: `SELECT platform_id, icon_url FROM accounts
+              WHERE platform = 'twitcasting' AND icon_url IS NOT NULL
+                AND platform_id IN (${ids.map(() => "?").join(",")})`,
+        args: ids,
+      });
+      return new Map(
+        r.rows.map((row) => [String(row.platform_id), String(row.icon_url)]),
+      );
+    },
+    contents: getTwitcastingContent,
+    // 「おすすめ」の上位100件を1回だけ読む（5分作り置き）。日本語の配信だけなので、日本/Global で同じ
+    live: async (_japan, limit) => {
+      const lives = await getRecommendedLives();
+      return lives
+        .sort((a, b) => b.movie.current_view_count - a.movie.current_view_count)
+        .slice(0, limit)
+        .map(({ movie, broadcaster }) => ({
+          platform: "twitcasting" as const,
+          platformId: broadcaster.id,
+          login: broadcaster.screen_id,
+          key: `twitcasting-${movie.id}`,
+          title: movie.title,
+          viewers: movie.current_view_count,
+          thumbnailUrl: toHttps(movie.large_thumbnail),
+          watchHref: `https://twitcasting.tv/${broadcaster.screen_id}`,
+          channelName: broadcaster.name,
+          iconUrl: toHttps(broadcaster.image),
+          elapsed: elapsedSince(new Date(movie.created * 1000).toISOString()),
+        }));
     },
   },
 };

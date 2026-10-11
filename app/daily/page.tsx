@@ -2,14 +2,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getDayRange, dayTitle, shiftDay } from "@/lib/daily";
 import { PageHeader } from "@/components/PageHeader";
+import { PLATFORM_NAMES } from "@/lib/platforms";
 
 // 新しい日のまとめは毎朝増えるので、1時間ごとに作り直す
 export const revalidate = 3600;
 
 export const metadata: Metadata = {
   title: "日付ごとの配信ランキング",
-  description:
-    "Twitch・YouTubeの日本の配信を1日ごとにまとめたランキング。最高同接、前日から伸びた配信者、長時間配信、見られたゲーム。",
+  description: `${PLATFORM_NAMES}の日本の配信を1日ごとにまとめたランキング。最高同接、前日から伸びた配信者、長時間配信、見られたゲーム。`,
   alternates: { canonical: "/daily" },
 };
 

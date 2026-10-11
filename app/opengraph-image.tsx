@@ -1,15 +1,15 @@
 import { ImageResponse } from "next/og";
 import { OG_SIZE, OgFrame, OgLogo, loadJapaneseFont } from "@/lib/og";
+import { PLATFORM_NAMES } from "@/lib/platforms";
 
 // サイト全体の OGP 画像。個別の画像を持たないページ（トップ・急上昇など）で使われる。
 // 中身が変わらないので、ビルド時に1回だけ作られる
-export const alt =
-  "配信トレンド：Twitch・YouTubeを横断したライブ配信ランキング";
+export const alt = `配信トレンド：${PLATFORM_NAMES}を横断したライブ配信ランキング`;
 export const size = OG_SIZE;
 export const contentType = "image/png";
 
 const TITLE = "いま見られている配信が、ひと目でわかる";
-const SUB = "Twitch・YouTubeを横断したライブ配信ランキング";
+const SUB = `${PLATFORM_NAMES}を横断したライブ配信ランキング`;
 const TAGS = ["ライブランキング", "急上昇", "配信者の同接・配信時間"];
 
 export default async function Image() {

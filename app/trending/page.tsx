@@ -12,6 +12,7 @@ import {
   accountKey,
   isPlatformId,
   type PlatformId,
+  PLATFORM_NAMES,
 } from "@/lib/platforms";
 import { SegmentedTabs } from "@/components/SegmentedTabs";
 import { PageHeader } from "@/components/PageHeader";
@@ -22,8 +23,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "急上昇の配信者",
-  description:
-    "24時間前と比べて視聴者数が伸びている配信者のランキング。Twitch・YouTubeを横断して表示します。",
+  description: `24時間前と比べて視聴者数が伸びている配信者のランキング。${PLATFORM_NAMES}を横断して表示します。`,
   alternates: { canonical: "/trending" },
 };
 

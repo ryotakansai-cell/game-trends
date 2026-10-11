@@ -38,6 +38,18 @@ function buildHref(platform: PlatformId | "all", isJapanese: boolean) {
   return qs ? `/?${qs}` : "/";
 }
 
+/** 「Twitch・ツイキャス 5分ごと / YouTube 毎時」。同じ間隔の配信元をまとめて、スマホでも1行に収める */
+function updateLabel(platforms: PlatformId[]) {
+  const byInterval = new Map<string, string[]>();
+  for (const p of platforms) {
+    const { liveUpdate, label } = PLATFORMS[p];
+    byInterval.set(liveUpdate, [...(byInterval.get(liveUpdate) ?? []), label]);
+  }
+  return [...byInterval]
+    .map(([interval, labels]) => `${labels.join("・")} ${interval}`)
+    .join(" / ");
+}
+
 export default async function Home({ searchParams }: Props) {
   const { lang, platform } = await searchParams;
   const isJapanese = lang !== "all";
@@ -86,9 +98,7 @@ export default async function Home({ searchParams }: Props) {
                 それぞれの更新間隔を出す */}
             <span className="mt-0.5 block text-gray-500">
               更新：
-              {targets
-                .map((p) => `${PLATFORMS[p].label} ${PLATFORMS[p].liveUpdate}`)
-                .join(" / ")}
+              {updateLabel(targets)}
               {collectedAt && (
                 <>
                   （<RelativeTime iso={collectedAt} />）
