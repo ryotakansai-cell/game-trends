@@ -22,6 +22,8 @@ const JOBS: Record<string, string> = {
   "8 * * * *": "/api/cron/play-snapshot",
   // 毎時：ツイキャスの配信中の記録
   "48 * * * *": "/api/cron/twitcasting-snapshot",
+  // 毎時：Kick の配信中の記録
+  "13 * * * *": "/api/cron/kick-snapshot",
 };
 
 export default {

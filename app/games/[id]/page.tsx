@@ -6,12 +6,13 @@ import { notFound } from "next/navigation";
 import {
   getGameById,
   getTopStreams,
-  getUsersByLogin,
   boxArt,
-  streamThumb,
-  elapsedSince,
   formatViewers,
 } from "@/lib/twitch";
+import { LOADERS, getAccountIcons, twitchEntry } from "@/lib/platform-loaders";
+import { getCreatorIdMap } from "@/lib/creators";
+import { accountKey } from "@/lib/platforms";
+import { LiveCards, type LiveRow } from "@/components/LiveViews";
 import { getGameDetails } from "@/lib/igdb";
 import { getSteamPlayersForTwitchGame } from "@/lib/steam";
 import { SegmentedTabs } from "@/components/SegmentedTabs";
@@ -34,7 +35,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!game) return { title: "見つかりません" };
 
   const title = `${game.name}の配信者ランキング`;
-  const description = `${game.name}をいま配信している配信者を視聴者数順に表示。公式サイトや関連情報へのリンクもまとめています。`;
+  const description = `${game.name}をいま配信している配信者を視聴者数順に表示（Twitch・Kick）。公式サイトや関連情報へのリンクもまとめています。`;
 
   return {
     title,
@@ -52,14 +53,24 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
   // 言語で絞るかどうかだけが JP / Global の違い。
   // Twitchの /streams は game_id と language を同時に指定できるので、
   // 取得の段階で絞り込める（取ってから捨てるより無駄がない）
-  const [game, streams] = await Promise.all([
+  // Kick はカテゴリ名を Twitch のゲームに結び付けてあるので（lib/platform-loaders.ts）、同じゲームの配信を混ぜる。
+  // Kick の一覧はトップページと同じ5分作り置きの1回分を使い回すので、呼び出しは増えない。
+  // YouTube とツイキャスはゲームの情報が無いので入らない
+  const [game, twitchStreams, kickStreams] = await Promise.all([
     loadGame(id),
     getTopStreams({
       gameId: id,
       language: isJapanese ? "ja" : undefined,
       limit: 30,
     }),
+    LOADERS.kick.live(isJapanese, 100).catch(() => []),
   ]);
+  const streams = [
+    ...twitchStreams.map(twitchEntry),
+    ...kickStreams.filter((e) => e.gameId === id),
+  ]
+    .sort((a, b) => b.viewers - a.viewers)
+    .slice(0, 30);
 
   if (!game) notFound();
 
@@ -72,13 +83,18 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
     getSteamPlayersForTwitchGame(game.id).catch(() => null),
   ]);
 
-  // 配信者アイコンは表示時にその場で取得する（DBには保存しない方針）。
-  // getUsersByLogin は100件までまとめて1回で引ける
-  const users = await getUsersByLogin(streams.map((s) => s.user_login)).catch(
-    () => new Map(),
-  );
+  // 配信者のアイコンと名寄せ（名寄せ済みなら統合ページへ飛ぶ）
+  const [icons, creatorIds] = await Promise.all([
+    getAccountIcons(streams.filter((e) => !e.iconUrl)),
+    getCreatorIdMap(streams),
+  ]);
+  const rows: LiveRow[] = streams.map((entry) => ({
+    entry,
+    creatorId: creatorIds.get(accountKey(entry)) ?? null,
+    iconUrl: entry.iconUrl ?? icons.get(accountKey(entry)),
+  }));
 
-  const totalViewers = streams.reduce((sum, s) => sum + s.viewer_count, 0);
+  const totalViewers = streams.reduce((sum, s) => sum + s.viewers, 0);
   const query = encodeURIComponent(game.name);
 
   // IGDBから取れた「本物のリンク」。公式サイトやSteamのページそのもの
@@ -239,57 +255,8 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
           )}
         </p>
       ) : (
-        <ul className="mt-4 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {streams.map((stream, index) => (
-            <li key={stream.id} className="group">
-              <a
-                href={`https://twitch.tv/${stream.user_login}`}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <div className="relative overflow-hidden rounded-lg border border-white/10 bg-white/5">
-                  <Image
-                    src={streamThumb(stream.thumbnail_url)}
-                    alt={stream.title}
-                    width={440}
-                    height={248}
-                    className="w-full transition duration-300 group-hover:scale-105"
-                    unoptimized
-                  />
-                  <span className="absolute left-2 top-2 rounded bg-black/70 px-2 py-0.5 text-xs font-bold text-white">
-                    {index + 1}
-                  </span>
-                  <span className="absolute right-2 top-2 flex items-center gap-1 rounded bg-red-600/90 px-2 py-0.5 text-xs font-bold text-white">
-                    <span className="h-1.5 w-1.5 rounded-full bg-white" />
-                    {formatViewers(stream.viewer_count)}
-                  </span>
-                  <span className="absolute bottom-2 left-2 rounded bg-black/70 px-2 py-0.5 text-xs text-gray-200">
-                    {elapsedSince(stream.started_at)}
-                  </span>
-                </div>
-              </a>
-
-              <p className="mt-3 line-clamp-2 text-sm font-bold text-gray-100">
-                {stream.title}
-              </p>
-              <Link
-                href={`/streamers/${stream.user_login}`}
-                className="mt-1.5 flex items-center gap-2 text-sm text-gray-200 transition hover:text-purple-400"
-              >
-                {users.get(stream.user_login)?.profile_image_url && (
-                  <Image
-                    src={users.get(stream.user_login)!.profile_image_url}
-                    alt={stream.user_name}
-                    width={24}
-                    height={24}
-                    className="shrink-0 rounded-full ring-1 ring-white/10"
-                  />
-                )}
-                <span className="truncate">{stream.user_name}</span>
-              </Link>
-            </li>
-          ))}
-        </ul>
+        // トップページと同じカード。Twitch と Kick が混ざるので配信元の印を出す
+        <LiveCards rows={rows} showPlatform />
       )}
     </main>
   );

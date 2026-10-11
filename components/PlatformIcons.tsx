@@ -34,11 +34,20 @@ export const TwitcastingIcon = () => (
   </svg>
 );
 
+/** Kick：角を落とした四角の中に K（公式ロゴの緑は使わず単色にする） */
+export const KickIcon = () => (
+  <svg {...props} fill="none" stroke="currentColor" strokeWidth={2.2}>
+    <rect x="3" y="3" width="18" height="18" rx="4" />
+    <path d="M9 7.5v9M9 12l5-4.5M9 12l5 4.5" strokeLinecap="round" />
+  </svg>
+);
+
 /** 配信元 → アイコン。配信元を足したら、ここにも1行足す（足し忘れると型チェックで止まる） */
 const ICONS: Record<PlatformId, () => React.JSX.Element> = {
   twitch: TwitchIcon,
   youtube: YouTubeIcon,
   twitcasting: TwitcastingIcon,
+  kick: KickIcon,
 };
 
 export function PlatformIcon({ platform }: { platform: PlatformId }) {

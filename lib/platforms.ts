@@ -9,7 +9,12 @@
 // サーバーで読む処理の振り分けは lib/platform-loaders.ts に置く。
 
 /** 扱っている配信元。並び順はボタンなどに出す順番 */
-export const PLATFORM_IDS = ["twitch", "youtube", "twitcasting"] as const;
+export const PLATFORM_IDS = [
+  "twitch",
+  "youtube",
+  "twitcasting",
+  "kick",
+] as const;
 export type PlatformId = (typeof PLATFORM_IDS)[number];
 
 export function isPlatformId(v: unknown): v is PlatformId {
@@ -124,6 +129,30 @@ export const PLATFORMS: Record<PlatformId, PlatformInfo> = {
     // 視聴者の数が Twitch より一桁小さいので、最低ラインも下げる
     rising: { windowHours: 3, minViewers: 30 },
     badgeClass: "bg-sky-700/90",
+    sitemapAccounts: 100,
+  },
+  kick: {
+    label: "Kick",
+    // URL には slug ではなく数字のユーザーIDを使う（slug は本人が変えられるため。ツイキャスと同じ）
+    accountPath: (a) => `/kick/${a.platformId}`,
+    liveUrl: (a) => `https://kick.com/${a.login ?? ""}`,
+    // content_id にはサムネイルの URL の一部（配信ごとのID）を残している（lib/kick.ts の thumbnailId）
+    liveThumbnail: (_a, contentId) =>
+      contentId
+        ? `https://images.kick.com/video_thumbnails/${contentId}/480.webp`
+        : null,
+    profileUrl: (a) => `https://kick.com/${a.login ?? ""}`,
+    // 公開 API に過去の配信の一覧が無いので、終わった配信へのリンクはチャンネルのページにする
+    pastStreamUrl: () => null,
+    pastThumbnail: (_a, contentId) =>
+      `https://images.kick.com/video_thumbnails/${contentId}/480.webp`,
+    // Twitch と同じく、配信の言語（accounts.language）で日本の配信を見分ける
+    japanLiveSql: "a.language = 'ja'",
+    japanAccountSql: "a.language = 'ja'",
+    liveUpdate: "5分ごと",
+    // 日本の配信の規模は Twitch の日本に近い（2026-10-11 の実測で最高1.1万人）ので、最低ラインも近くする
+    rising: { windowHours: 3, minViewers: 100 },
+    badgeClass: "bg-green-700/90",
     sitemapAccounts: 100,
   },
 };
