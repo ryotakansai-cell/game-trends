@@ -47,6 +47,23 @@ await db.batch(
 );
 console.log("表を作りました（既にあるものはそのまま）");
 
+// 2026-10-11 追加：その日一番長く配信したもの1本のタイトルと、YouTube なら動画ID。
+// 毎時の記録は90日で消えるので、それ以降も「その日何の配信をしていたか」を残すため。
+// 全部の配信を残すと1年で数百MBになるので1本に絞っている。
+// ALTER TABLE ADD COLUMN は2回実行するとエラーになるので、列が無いときだけ足す
+const columns = (await db.execute("PRAGMA table_info(daily_stats)")).rows.map(
+  (r) => r.name,
+);
+for (const [name, type] of [
+  ["main_title", "TEXT"],
+  ["main_content_id", "TEXT"],
+]) {
+  if (!columns.includes(name)) {
+    await db.execute(`ALTER TABLE daily_stats ADD COLUMN ${name} ${type}`);
+    console.log(`daily_stats に ${name} を足しました`);
+  }
+}
+
 // 監視リストの初期値を、これまでの記録から作る（既に行があれば何もしない）
 const { rows } = await db.execute("SELECT COUNT(*) AS n FROM youtube_watch");
 if (Number(rows[0].n) === 0) {

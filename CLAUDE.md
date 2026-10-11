@@ -86,7 +86,10 @@ components/
 ├── PlatformIcons.tsx           配信元の単色アイコン（色は付けず currentColor）
 ├── RelativeTime.tsx            「◯分前」（ブラウザ側で計算。作り置きされても数字が古くならない）
 ├── StreamStats.tsx             配信者ページの「配信の記録」（数字・日ごとの最高同接の棒グラフ・よく遊んだゲーム・比較表）
-└── ShareOnX.tsx                「Xで共有」ボタン（X の投稿画面を開くだけ。API を使わない）
+├── ShareOnX.tsx                「Xで共有」ボタン（X の投稿画面を開くだけ。API を使わない）
+├── DayStreams.tsx              グラフで選んだ日の配信（タイトル・ゲーム・数字、Twitch はその日のアーカイブとクリップ）
+├── HourHeatmap.tsx             よく配信する時間帯（曜日×時間。白の濃淡で、紫は使わない）
+└── SameGameStreamers.tsx       同じゲームを配信している人（雑談などゲームではない分類は飛ばす）
 lib/
 ├── twitch.ts                   Twitch APIとの通信（唯一の窓口）
 ├── youtube.ts                  YouTube Data API v3との通信 + DBからのランキング読み取り
@@ -95,6 +98,7 @@ lib/
 ├── daily-stats.ts              日ごとの集計（まとめる・古い記録を消す）
 ├── daily.ts                    日付ごとのまとめページのデータ（日本の配信者に絞る JAPAN_FILTER もここ）
 ├── streamer-list.ts            配信者タブの一覧（並び替え）と検索
+├── stats-extras.ts             配信者ページの追加情報（時間帯・同じゲームの人・選んだ日の配信）を3ページ共通で取る
 ├── og.tsx                      OGP 画像の共通部品（日本語フォントの取得・ロゴ・枠）
 ├── account-stats.ts            アカウントの直近30日の統計（daily_stats と、ゲームは毎時の記録から）
 ├── snapshot-range.ts           live_snapshots を時刻の範囲で絞る部品、日本時間の日付
@@ -145,6 +149,11 @@ self（本人）/ clip（切り抜き）/ archive（アーカイブ）を区別�
 「昨日の分が無ければまとめる」保険も持っている（`rollupIfBehind`。あれば何もしない）。
 配信者ページの統計は本人アカウントだけで出す（切り抜きの同接は本人の数字ではないため）。
 名寄せ済みの人は、配信時間が一番長いアカウントで数字とグラフを出し、プラットフォームごとの比較表を添える。
+グラフの棒を押すと `?day=日付` 付きの URL になり、サーバーがその日の配信をグラフの下に出す（JavaScript なし）。
+90日を過ぎると毎時の記録が消えるので、`daily_stats` に「その日一番長く配信した1本」のタイトルと
+YouTube の動画ID（`main_title` / `main_content_id`）を残している。全部の配信を残すと1年で数百MBになるため1本に絞った。
+Twitch のアーカイブは Twitch 側で7〜60日で消えるので、リンクは残さずタイトルだけにしている。
+日ごとの集計に列を足したら `npm run db:migrate` の後、`/api/cron/daily?from=日付` でその日からまとめ直せる。
 配信者の統計やグラフは `daily_stats` から読む（読む行数が毎時の記録の数分の一で済む）。
 間引き（古い毎時の記録を一部だけ残す）にしなかったのは、統計に必要な値は集計に全部あり、
 残しても使い道が無いため。

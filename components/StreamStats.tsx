@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { HourHeatmap } from "@/components/HourHeatmap";
 import type { AccountStats } from "@/lib/account-stats";
 import { boxArt, formatViewers, type TwitchGame } from "@/lib/twitch";
 
@@ -45,7 +46,16 @@ function StatTile({
  *  色はサイトの決まり（紫は「現在地」と「hover」だけ）に合わせ、棒は灰色、
  *  指した棒だけ紫にする。1系列なので凡例は付けず、見出しで何の棒かを示す。
  *  吹き出しは CSS の hover だけで出す（ブラウザ側の JavaScript を増やさないため） */
-function PeakChart({ days }: { days: AccountStats["days"] }) {
+function PeakChart({
+  days,
+  dayHref,
+  selectedDay,
+}: {
+  days: AccountStats["days"];
+  /** 渡すと、配信した日の棒が「その日の配信」を開くリンクになる */
+  dayHref?: (day: string) => string;
+  selectedDay?: string;
+}) {
   const max = niceMax(Math.max(...days.map((d) => d.peak)));
   const ticks = [max, max / 2, 0];
   const mid = Math.floor(days.length / 2);
@@ -84,14 +94,16 @@ function PeakChart({ days }: { days: AccountStats["days"] }) {
                   : i > days.length - 5
                     ? "right-0"
                     : "left-1/2 -translate-x-1/2";
-              return (
-                <div
-                  key={d.day}
-                  className="group relative flex h-full flex-1 items-end justify-center"
-                >
+              // 選んでいる日の棒は紫（サイトの決まりで「選択中」は紫）
+              const selected = d.day === selectedDay;
+              const linkable = dayHref !== undefined && d.peak > 0;
+              const inner = (
+                <>
                   {d.peak > 0 && (
                     <div
-                      className="w-full max-w-6 rounded-t bg-gray-500 transition-colors group-hover:bg-purple-400"
+                      className={`w-full max-w-6 rounded-t transition-colors group-hover:bg-purple-400 ${
+                        selected ? "bg-purple-400" : "bg-gray-500"
+                      }`}
                       style={{ height: `${(d.peak / max) * 100}%` }}
                     />
                   )}
@@ -104,7 +116,27 @@ function PeakChart({ days }: { days: AccountStats["days"] }) {
                         ? `最高 ${formatViewers(d.peak)}人 ・ ${d.hours}時間`
                         : "配信なし"}
                     </p>
+                    {linkable && (
+                      <p className="mt-0.5 text-gray-500">押すとこの日の配信</p>
+                    )}
                   </div>
+                </>
+              );
+              const cls =
+                "group relative flex h-full flex-1 items-end justify-center";
+              return linkable ? (
+                // 押すと ?day=… 付きの URL になり、サーバーがその日の配信を下に出す（JavaScript なし）
+                <Link
+                  key={d.day}
+                  href={`${dayHref(d.day)}#stats-day`}
+                  aria-label={`${dayLabel(d.day, true)}の配信を見る`}
+                  className={cls}
+                >
+                  {inner}
+                </Link>
+              ) : (
+                <div key={d.day} className={cls}>
+                  {inner}
                 </div>
               );
             })}
@@ -157,6 +189,10 @@ export function StreamStats({
   games,
   platforms = [],
   chartLabel,
+  dayHref,
+  selectedDay,
+  dayPanel,
+  heatmap,
 }: {
   stats: AccountStats | null;
   games: Map<string, TwitchGame>;
@@ -164,6 +200,13 @@ export function StreamStats({
   platforms?: { label: string; stats: AccountStats | null }[];
   /** 数字とグラフがどのアカウントの分かを見出しに添える（比較表を出すときに使う） */
   chartLabel?: string;
+  /** グラフの棒を押したときの URL（?day=… を付けたこのページ） */
+  dayHref?: (day: string) => string;
+  /** 選んでいる日と、その日の配信の欄（DayStreams）。グラフのすぐ下に出す */
+  selectedDay?: string;
+  dayPanel?: React.ReactNode;
+  /** よく配信する時間帯（曜日×時間の回数） */
+  heatmap?: number[][];
 }) {
   const compared = platforms.filter((p) => p.stats !== null);
   return (
@@ -241,8 +284,15 @@ export function StreamStats({
 
           <div className="mt-6 rounded-lg border border-white/10 p-4">
             <p className="mb-6 text-sm text-gray-300">日ごとの最高同接</p>
-            <PeakChart days={stats.days} />
+            <PeakChart
+              days={stats.days}
+              dayHref={dayHref}
+              selectedDay={selectedDay}
+            />
+            {dayPanel}
           </div>
+
+          {heatmap && <HourHeatmap grid={heatmap} weeks={4} />}
 
           {stats.topGames.length > 0 && (
             <div className="mt-6">

@@ -36,6 +36,7 @@ export type DailySummary = {
   topPeak: DailyEntry[]; // 最高同接の上位
   longest: DailyEntry[]; // 配信時間の長い順
   rising: DailyEntry[]; // 前日より最高同接が伸びた人
+  personalBests: DailyEntry[]; // 直近30日の自己最高を更新した人（prevPeak = それまでの最高）
   games: DailyGame[]; // 日本の Twitch 配信で見られたゲーム
   streamers: number; // その日に配信を記録した日本の配信者の数
 };
@@ -106,7 +107,7 @@ export async function getDailySummary(day: string): Promise<DailySummary> {
     new Date(`${day}T00:00:00+09:00`).getTime() + 24 * 3600 * 1000,
   ).toISOString();
 
-  const [topPeak, longest, rising, games, count] = await Promise.all([
+  const [topPeak, longest, rising, games, count, bests] = await Promise.all([
     db.execute({
       sql: `SELECT ${ENTRY_COLUMNS}
             FROM daily_stats d JOIN accounts a ON a.id = d.account_id
@@ -154,6 +155,25 @@ export async function getDailySummary(day: string): Promise<DailySummary> {
             WHERE d.day = ? AND ${JAPAN_FILTER}`,
       args: [day],
     }),
+    // 自己ベスト：その日の最高同接が、直近30日（前日まで）の自分の最高を上回った人。
+    // 記録を取り始めたばかりの人は何をしても「自己ベスト」になるので、
+    // 過去30日に5日以上の記録がある人だけにする。前日比と同じく300人以上に絞る。
+    // 相関サブクエリは (account_id, day) の主キーの索引で引くので、1人あたり数十行で済む
+    db.execute({
+      sql: `SELECT * FROM (
+              SELECT ${ENTRY_COLUMNS},
+                (SELECT MAX(p.peak_viewers) FROM daily_stats p
+                 WHERE p.account_id = d.account_id AND p.day >= ? AND p.day < ?) AS prev_peak,
+                (SELECT COUNT(*) FROM daily_stats p
+                 WHERE p.account_id = d.account_id AND p.day >= ? AND p.day < ?) AS past_days
+              FROM daily_stats d JOIN accounts a ON a.id = d.account_id
+              WHERE d.day = ? AND d.peak_viewers >= 300 AND ${JAPAN_FILTER}
+            )
+            WHERE past_days >= 5 AND peak_viewers > prev_peak
+            ORDER BY peak_viewers DESC
+            LIMIT 10`,
+      args: [shiftDay(day, -30), day, shiftDay(day, -30), day, day],
+    }),
   ]);
 
   return {
@@ -161,6 +181,7 @@ export async function getDailySummary(day: string): Promise<DailySummary> {
     topPeak: topPeak.rows.map(toEntry),
     longest: longest.rows.map(toEntry),
     rising: rising.rows.map(toEntry),
+    personalBests: bests.rows.map(toEntry),
     games: games.rows.map((r) => ({
       gameId: String(r.game_id),
       avgViewers: Number(r.avg_viewers),

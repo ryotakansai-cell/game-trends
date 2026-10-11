@@ -27,10 +27,11 @@ async function rollupDay(day: string) {
   const result = await db.execute({
     sql: `
       INSERT OR REPLACE INTO daily_stats
-        (account_id, day, peak_viewers, avg_viewers, hours_live, top_game_id)
+        (account_id, day, peak_viewers, avg_viewers, hours_live, top_game_id,
+         main_title, main_content_id)
       WITH day_rows AS (
         -- captured_at の索引で、その日の分だけを読む
-        SELECT account_id, viewers, game_id, captured_at
+        SELECT account_id, viewers, game_id, captured_at, title, content_id
         FROM live_snapshots
         WHERE captured_at >= ? AND captured_at < ?
       ),
@@ -56,10 +57,25 @@ async function rollupDay(day: string) {
         FROM day_rows
         WHERE game_id IS NOT NULL
         GROUP BY account_id, game_id
+      ),
+      stream_rank AS (
+        -- その日一番長く配信したもの（タイトル単位。YouTube は動画ID単位）。
+        -- 毎時の記録は90日で消えるので、「その日何の配信をしていたか」をこれだけ残す
+        SELECT
+          account_id,
+          MAX(title) AS title,
+          content_id,
+          ROW_NUMBER() OVER (
+            PARTITION BY account_id ORDER BY COUNT(*) DESC, MAX(viewers) DESC
+          ) AS rn
+        FROM day_rows
+        WHERE title IS NOT NULL
+        GROUP BY account_id, COALESCE(content_id, title)
       )
-      SELECT p.account_id, ?, p.peak, p.avg_v, p.hours, g.game_id
+      SELECT p.account_id, ?, p.peak, p.avg_v, p.hours, g.game_id, s.title, s.content_id
       FROM per_account p
       LEFT JOIN game_rank g ON g.account_id = p.account_id AND g.rn = 1
+      LEFT JOIN stream_rank s ON s.account_id = p.account_id AND s.rn = 1
     `,
     args: [from, to, day],
   });
@@ -69,12 +85,14 @@ async function rollupDay(day: string) {
 /** まだまとめていない日を、昨日の分まで順にまとめる。
  *  cron が1日失敗しても、次の日に失敗した日の分もまとめて追いつく。
  *  昨日の分は毎回まとめ直す（日付が変わった直後に遅れて入った記録も拾うため） */
-export async function rollupPendingDays() {
+export async function rollupPendingDays(fromDay?: string) {
   const db = getDbClient();
   const yesterday = jstDay(new Date(Date.now() - 24 * 3600 * 1000));
 
   const last = await db.execute("SELECT MAX(day) AS day FROM daily_stats");
-  let day = last.rows[0]?.day ? String(last.rows[0].day) : null;
+  // fromDay を渡すと、その日からまとめ直す（列を足したときに過去の日も埋めるため）。
+  // 毎時の記録が残っている90日より前を指定しても、その日は0件になるだけ
+  let day = fromDay ?? (last.rows[0]?.day ? String(last.rows[0].day) : null);
 
   if (!day) {
     // 初回は、記録が始まった日から（captured_at の索引の先頭を読むだけなので速い）

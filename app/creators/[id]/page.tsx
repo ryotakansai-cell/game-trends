@@ -12,6 +12,10 @@ import { relationLabel } from "@/lib/platform";
 import type { ContentItem, PlatformAccount } from "@/lib/platform";
 import { SegmentedTabs } from "@/components/SegmentedTabs";
 import { StreamStats } from "@/components/StreamStats";
+import { DayStreams } from "@/components/DayStreams";
+import { SameGameStreamers } from "@/components/SameGameStreamers";
+import { loadStatsExtras, pickSelectedDay } from "@/lib/stats-extras";
+import { dayTitle } from "@/lib/daily";
 import { getAccountStats } from "@/lib/account-stats";
 import { getGamesByIds } from "@/lib/twitch";
 
@@ -61,6 +65,11 @@ async function loadCreatorStats(accounts: PlatformAccount[]) {
     mainLabel: main ? labelOf(main.account) : undefined,
     platforms: rows.map((r) => ({ label: labelOf(r.account), stats: r.stats })),
     games,
+    // 時間帯・その日の配信は、本人アカウントを全部合わせて見る
+    selfAccountIds: selfAccounts.map((a) => a.id),
+    // 選んだ日の Twitch のアーカイブとクリップ用（Twitch の platform_id はユーザーID）
+    twitchUserId: selfAccounts.find((a) => a.platform === "twitch")
+      ?.platform_id,
   };
 }
 
@@ -70,7 +79,8 @@ export const revalidate = 3600;
 type Props = {
   // Next.js 16 では params / searchParams は Promise なので await して取り出す
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ sort?: string; kind?: string }>;
+  // day はグラフで選んだ日（その日の配信をグラフの下に出す）
+  searchParams: Promise<{ sort?: string; kind?: string; day?: string }>;
 };
 
 // generateMetadata と本体の両方で creator が必要になる。
@@ -199,7 +209,7 @@ function ItemCard({
 
 export default async function CreatorPage({ params, searchParams }: Props) {
   const { id } = await params;
-  const { sort, kind } = await searchParams;
+  const { sort, kind, day } = await searchParams;
   const creatorId = Number(id);
 
   // "/creators/abc" のような数字でないURLは404にする
@@ -217,6 +227,29 @@ export default async function CreatorPage({ params, searchParams }: Props) {
 
   const sortByRecent = sort === "recent";
   const selectedKind: Kind = kind === "video" || kind === "clip" ? kind : "all";
+
+  // 時間帯・同じゲームの人・選んだ日の配信
+  const selectedDay = pickSelectedDay(statsData.stats, day);
+  const extras =
+    statsData.selfAccountIds.length > 0
+      ? await loadStatsExtras({
+          accountIds: statsData.selfAccountIds,
+          stats: statsData.stats,
+          games: statsData.games,
+          twitchUserId: statsData.twitchUserId,
+          selectedDay,
+        })
+      : null;
+  const statsGames = extras?.games ?? statsData.games;
+  // 日を選ぶ・閉じるときは、動画の並び替え（sort / kind）を保ったままにする
+  const dayHref = (d?: string) => {
+    const p = new URLSearchParams();
+    if (sortByRecent) p.set("sort", "recent");
+    if (selectedKind !== "all") p.set("kind", selectedKind);
+    if (d) p.set("day", d);
+    const qs = p.toString();
+    return qs ? `/creators/${creatorId}?${qs}` : `/creators/${creatorId}`;
+  };
 
   // 今配信中のものだけ集める（プラットフォームをまたいで横断表示）
   const liveNow = contents.filter((c) => c.live !== null);
@@ -336,14 +369,37 @@ export default async function CreatorPage({ params, searchParams }: Props) {
       {/* 配信の記録。2つ以上のプラットフォームで配信していれば比較表も出す */}
       <StreamStats
         stats={statsData.stats}
-        games={statsData.games}
+        games={statsGames}
         platforms={statsData.platforms}
         chartLabel={
           statsData.platforms.filter((p) => p.stats).length >= 2
             ? statsData.mainLabel
             : undefined
         }
+        heatmap={extras?.heatmap}
+        dayHref={(d) => dayHref(d)}
+        selectedDay={selectedDay}
+        dayPanel={
+          selectedDay && extras ? (
+            <DayStreams
+              dayLabel={dayTitle(selectedDay)}
+              closeHref={dayHref()}
+              streams={extras.dayStreams}
+              games={statsGames}
+              vods={extras.vods}
+              clips={extras.clips}
+            />
+          ) : undefined
+        }
       />
+
+      {extras?.topGameId && statsGames.get(extras.topGameId) && (
+        <SameGameStreamers
+          gameId={extras.topGameId}
+          gameName={statsGames.get(extras.topGameId)!.name}
+          entries={extras.sameGame}
+        />
+      )}
 
       {/* 並び替えと種別のタブ。必ず縦に2段（inline-flexは横に並ぶため） */}
       <div className="mt-12 flex flex-col gap-2">

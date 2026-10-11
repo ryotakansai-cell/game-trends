@@ -136,7 +136,12 @@ export default async function DailyPage({ params }: Props) {
   const summary = await loadSummary(date);
   if (!summary) notFound();
 
-  const all = [...summary.topPeak, ...summary.longest, ...summary.rising];
+  const all = [
+    ...summary.topPeak,
+    ...summary.longest,
+    ...summary.rising,
+    ...summary.personalBests,
+  ];
   const [range, twitchUsers, youtubeIcons, games] = await Promise.all([
     getDayRange(),
     getUsersByLogin([
@@ -246,6 +251,21 @@ export default async function DailyPage({ params }: Props) {
             </Section>
           )}
 
+          {summary.personalBests.length > 0 && (
+            <Section title="自己ベスト更新" note="直近30日の自分の最高を更新">
+              <ul className="mt-3">
+                {summary.personalBests.map((e) => (
+                  <EntryRow
+                    key={`${e.platform}-${e.platformId}`}
+                    entry={e}
+                    iconUrl={iconOf(e)}
+                    detail={`これまでの最高 ${formatViewers(e.prevPeak!)}人`}
+                    value={`${formatViewers(e.peakViewers)}人`}
+                  />
+                ))}
+              </ul>
+            </Section>
+          )}
           <Section title="長時間配信">
             <ul className="mt-3">
               {summary.longest.map((e) => (
