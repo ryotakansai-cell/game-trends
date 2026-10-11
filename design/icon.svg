@@ -1,8 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72">
-  <!-- 配信トレンドのアイコン：横長の動画の枠の中で、伸びていく折れ線（案B。2026-10-10 オーナーが選んだ）。
-       「配信（動画）の中で伸びている」をそのまま絵にした。PC のモニターに見えないよう台は付けない。
+  <!-- 配信トレンドのアイコン：角丸の四角の中に輪、その中に再生ボタン（案A。2026-10-11 オーナーが選んだ）。
+       以前の「動画の枠の中で伸びる折れ線」は分析寄りに見えたため、サイトの主役である
+       「配信を見る」を表す再生ボタンにした。ナビの「ライブ」のアイコン（輪＋再生）と同じ形で、
+       YouTube（赤い角丸の四角＋白い三角）とも見分けやすい。
+       輪の線は 16px（ブラウザのタブ）でも細くなりすぎないよう、案より少し太い 6 にしている。
        紫はサイトの「現在地・選択中」の色にそろえている -->
   <rect width="72" height="72" rx="16" fill="#7c3aed"/>
-  <rect x="10" y="18" width="52" height="36" rx="8" fill="#fff"/>
-  <path d="M19 45 L29 35 L36 41 L50 27" stroke="#7c3aed" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="36" cy="36" r="21" fill="none" stroke="#fff" stroke-width="6"/>
+  <path d="M31 26.5 L47 36 L31 45.5 Z" fill="#fff" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
 </svg>

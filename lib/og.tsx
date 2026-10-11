@@ -30,13 +30,19 @@ export function OgLogo() {
     <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
       <svg width="56" height="56" viewBox="0 0 72 72">
         <rect width="72" height="72" rx="16" fill="#7c3aed" />
-        <rect x="10" y="18" width="52" height="36" rx="8" fill="#fff" />
-        <path
-          d="M19 45 L29 35 L36 41 L50 27"
-          stroke="#7c3aed"
-          strokeWidth="5"
+        <circle
+          cx="36"
+          cy="36"
+          r="21"
           fill="none"
-          strokeLinecap="round"
+          stroke="#fff"
+          strokeWidth="6"
+        />
+        <path
+          d="M31 26.5 L47 36 L31 45.5 Z"
+          fill="#fff"
+          stroke="#fff"
+          strokeWidth="2"
           strokeLinejoin="round"
         />
       </svg>
