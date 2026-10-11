@@ -31,6 +31,103 @@ export async function getAccountId(
   return r.rows[0] ? Number(r.rows[0].id) : null;
 }
 
+export type AccountInfo = {
+  id: number;
+  platform: string;
+  platformId: string;
+  login: string | null;
+  displayName: string;
+  creatorId: number | null;
+};
+
+/** プラットフォームのIDからアカウントの情報を引く。DB に記録が無ければ null */
+export async function getAccountInfo(
+  platform: string,
+  platformId: string,
+): Promise<AccountInfo | null> {
+  const db = getDbClient();
+  const r = await db.execute({
+    sql: `SELECT id, login, display_name, creator_id
+          FROM accounts WHERE platform = ? AND platform_id = ?`,
+    args: [platform, platformId],
+  });
+  const row = r.rows[0];
+  if (!row) return null;
+  return {
+    id: Number(row.id),
+    platform,
+    platformId,
+    login: row.login ? String(row.login) : null,
+    displayName: String(row.display_name),
+    creatorId: row.creator_id === null ? null : Number(row.creator_id),
+  };
+}
+
+/** sitemap に載せる配信者。直近 days 日の配信時間が長い順に、名寄せしていない人だけ。
+ *  名寄せ済みの人は統合ページ（/creators/[id]）が載るので、同じ人を二重に載せない。
+ *  Twitch は日本語の配信者、YouTube は日本向けの検索で見つかった監視リストのチャンネルに絞る */
+export async function getTopUnlinkedAccounts(
+  platform: "twitch" | "youtube",
+  limit: number,
+  days = 14,
+): Promise<{ platformId: string; login: string | null }[]> {
+  const db = getDbClient();
+  const since = jstDay(new Date(Date.now() - days * 24 * 3600 * 1000));
+  const filter =
+    platform === "twitch"
+      ? "a.language = 'ja'"
+      : "a.id IN (SELECT account_id FROM youtube_watch)";
+  const r = await db.execute({
+    sql: `SELECT a.platform_id, a.login, SUM(d.hours_live) AS hours
+          FROM daily_stats d
+          JOIN accounts a ON a.id = d.account_id
+          WHERE d.day >= ? AND a.platform = ? AND a.creator_id IS NULL AND ${filter}
+          GROUP BY a.id
+          ORDER BY hours DESC
+          LIMIT ?`,
+    args: [since, platform, limit],
+  });
+  return r.rows.map((row) => ({
+    platformId: String(row.platform_id),
+    login: row.login ? String(row.login) : null,
+  }));
+}
+
+export type PastStream = {
+  contentId: string; // YouTube の動画ID
+  title: string;
+  peakViewers: number;
+  lastSeenAt: string; // 最後に配信中だと記録した時刻
+};
+
+/** 記録に残っている最近の配信（YouTube の動画単位）を新しい順に返す。
+ *  YouTube API を使わず DB だけで出す。チャンネルのページは検索エンジンに
+ *  何千ページも巡回される可能性があり、表示のたびに API を呼ぶと1日の枠を使い切るため */
+export async function getRecentStreams(
+  accountId: number,
+  limit = 12,
+): Promise<PastStream[]> {
+  const db = getDbClient();
+  // 毎時の記録は90日分ある。範囲で絞ってから動画ごとにまとめる
+  const since = new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString();
+  const r = await db.execute({
+    sql: `SELECT content_id, MAX(title) AS title, MAX(viewers) AS peak,
+                 MAX(captured_at) AS last_at
+          FROM live_snapshots
+          WHERE account_id = ? AND captured_at >= ? AND content_id IS NOT NULL
+          GROUP BY content_id
+          ORDER BY last_at DESC
+          LIMIT ?`,
+    args: [accountId, since, limit],
+  });
+  return r.rows.map((row) => ({
+    contentId: String(row.content_id),
+    title: String(row.title ?? ""),
+    peakViewers: Number(row.peak),
+    lastSeenAt: String(row.last_at),
+  }));
+}
+
 /** 直近 days 日（昨日まで）の配信の記録をまとめる。1日も配信の記録が無ければ null。
  *  今日の分は日ごとの集計がまだ無い（毎朝まとめる）ので含めない */
 export async function getAccountStats(

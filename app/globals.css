@@ -16,6 +16,14 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* どのページも横にずれないようにする保険。スマホでは、はみ出した部品が1つでもあると
+   ページ全体が横にスクロールでき、右に黒い余白が見えてしまう（2026-10-11 にトップページで発生）。
+   hidden ではなく clip にしているのは、hidden だとスマホの上部に固定している
+   絞り込みの帯（position: sticky）が固定されなくなるため。clip は「はみ出した分を切る」だけ */
+html,
+body {
+  overflow-x: clip;
+}
 
 body {
   background: var(--background);

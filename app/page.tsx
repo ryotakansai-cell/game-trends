@@ -124,10 +124,10 @@ export default async function Home({ searchParams }: Props) {
       thumbnailUrl: youtubeThumbnail(v.video_id),
       watchHref: `https://www.youtube.com/watch?v=${v.video_id}`,
       channelName: v.channel_title,
-      // 名寄せ済みなら内部の統合ページ、そうでなければ従来どおり外部リンク
+      // 名寄せ済みなら統合ページ、そうでなければ YouTube チャンネルのページ（配信の記録つき）
       channelHref: creatorId
         ? `/creators/${creatorId}`
-        : `https://www.youtube.com/channel/${v.channel_id}`,
+        : `/youtube/${v.channel_id}`,
       isCreator: creatorId !== undefined,
       channelIconUrl: youtubeIcons.get(v.channel_id),
     };
@@ -247,51 +247,30 @@ export default async function Home({ searchParams }: Props) {
               {entry.title}
             </p>
 
-            <div className="mt-2 flex items-center gap-2 text-sm">
+            {/* 配信者名とゲーム名は、長ければ「…」で省略する。名前のリンクに shrink-0 が
+                付いていた頃は縮まずに画面の外まで伸び、スマホでページごと横にずれていた。
+                縮むのは文字だけで、アイコンは shrink-0 で形を保つ */}
+            <div className="mt-2 flex min-w-0 items-center gap-2 text-sm">
+              {/* 配信者のリンク先はすべてサイト内（名寄せ済み→統合ページ、
+                  それ以外→Twitch の配信者ページ / YouTube チャンネルのページ） */}
               {entry.channelHref ? (
-                entry.channelHref.startsWith("http") ? (
-                  <a
-                    href={entry.channelHref}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex shrink-0 items-center gap-2 text-gray-300 hover:text-purple-300"
-                  >
-                    {entry.channelIconUrl && (
-                      <Image
-                        src={entry.channelIconUrl}
-                        alt={entry.channelName}
-                        width={28}
-                        height={28}
-                        className={`rounded-full ring-1 ${
-                          entry.isCreator
-                            ? "ring-purple-400/70"
-                            : "ring-white/10"
-                        }`}
-                      />
-                    )}
-                    <span className="truncate">{entry.channelName}</span>
-                  </a>
-                ) : (
-                  <Link
-                    href={entry.channelHref}
-                    className="flex shrink-0 items-center gap-2 text-gray-300 hover:text-purple-300"
-                  >
-                    {entry.channelIconUrl && (
-                      <Image
-                        src={entry.channelIconUrl}
-                        alt={entry.channelName}
-                        width={28}
-                        height={28}
-                        className={`rounded-full ring-1 ${
-                          entry.isCreator
-                            ? "ring-purple-400/70"
-                            : "ring-white/10"
-                        }`}
-                      />
-                    )}
-                    <span className="truncate">{entry.channelName}</span>
-                  </Link>
-                )
+                <Link
+                  href={entry.channelHref}
+                  className="flex min-w-0 items-center gap-2 text-gray-300 hover:text-purple-300"
+                >
+                  {entry.channelIconUrl && (
+                    <Image
+                      src={entry.channelIconUrl}
+                      alt={entry.channelName}
+                      width={28}
+                      height={28}
+                      className={`shrink-0 rounded-full ring-1 ${
+                        entry.isCreator ? "ring-purple-400/70" : "ring-white/10"
+                      }`}
+                    />
+                  )}
+                  <span className="truncate">{entry.channelName}</span>
+                </Link>
               ) : (
                 <span className="truncate text-gray-300">
                   {entry.channelName}

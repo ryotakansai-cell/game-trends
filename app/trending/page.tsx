@@ -59,7 +59,8 @@ type RisingEntry = {
   currentViewers: number;
   pastViewers: number;
   growthRate: number; // 0.35 なら 35%増
-  creatorHref?: string; // 名寄せ済みなら統合ページへのリンク
+  channelHref: string; // 名寄せ済みなら統合ページ、それ以外は Twitch の配信者ページ / YouTube チャンネルのページ
+  isCreator: boolean; // 名寄せ済みならアイコンの縁を紫にする（トップページと同じ）
 };
 
 export default async function TrendingPage({ searchParams }: Props) {
@@ -119,7 +120,9 @@ export default async function TrendingPage({ searchParams }: Props) {
     currentViewers: s.current_viewers,
     pastViewers: s.past_viewers,
     growthRate: s.growth_rate,
-    creatorHref: creatorHref("twitch", s.streamer_id),
+    channelHref:
+      creatorHref("twitch", s.streamer_id) ?? `/streamers/${s.login}`,
+    isCreator: creatorHref("twitch", s.streamer_id) !== undefined,
   }));
 
   // YouTubeの結果も同じ形に変換
@@ -134,7 +137,9 @@ export default async function TrendingPage({ searchParams }: Props) {
     currentViewers: v.current_viewers,
     pastViewers: v.past_viewers,
     growthRate: v.growth_rate,
-    creatorHref: creatorHref("youtube", v.channel_id),
+    channelHref:
+      creatorHref("youtube", v.channel_id) ?? `/youtube/${v.channel_id}`,
+    isCreator: creatorHref("youtube", v.channel_id) !== undefined,
   }));
 
   // 2つを混ぜて、増加率が高い順に並べ直す
@@ -146,7 +151,8 @@ export default async function TrendingPage({ searchParams }: Props) {
   const latestAt = [
     ...twitchRising.map((s) => s.current_at),
     ...youtubeRising.map((v) => v.current_at),
-  ].sort()
+  ]
+    .sort()
     .at(-1);
 
   return (
@@ -243,38 +249,25 @@ export default async function TrendingPage({ searchParams }: Props) {
             </p>
 
             <div className="mt-2 flex items-center gap-2 text-sm text-gray-400">
-              {/* 名寄せ済みなら統合ページへのリンクにする。
+              {/* 配信者のページへのリンク（名寄せ済みなら統合ページ）。
                   上のサムネの <a> は既に閉じているので入れ子にはならない */}
-              {entry.creatorHref ? (
-                <Link
-                  href={entry.creatorHref}
-                  className="flex min-w-0 items-center gap-2 transition hover:text-purple-300"
-                >
-                  {entry.channelIconUrl && (
-                    <Image
-                      src={entry.channelIconUrl}
-                      alt={entry.channelName}
-                      width={24}
-                      height={24}
-                      className="shrink-0 rounded-full ring-1 ring-purple-400/70"
-                    />
-                  )}
-                  <span className="truncate">{entry.channelName}</span>
-                </Link>
-              ) : (
-                <>
-                  {entry.channelIconUrl && (
-                    <Image
-                      src={entry.channelIconUrl}
-                      alt={entry.channelName}
-                      width={24}
-                      height={24}
-                      className="shrink-0 rounded-full ring-1 ring-white/10"
-                    />
-                  )}
-                  <span className="truncate">{entry.channelName}</span>
-                </>
-              )}
+              <Link
+                href={entry.channelHref}
+                className="flex min-w-0 items-center gap-2 transition hover:text-purple-300"
+              >
+                {entry.channelIconUrl && (
+                  <Image
+                    src={entry.channelIconUrl}
+                    alt={entry.channelName}
+                    width={24}
+                    height={24}
+                    className={`shrink-0 rounded-full ring-1 ${
+                      entry.isCreator ? "ring-purple-400/70" : "ring-white/10"
+                    }`}
+                  />
+                )}
+                <span className="truncate">{entry.channelName}</span>
+              </Link>
             </div>
 
             {/* 「1068人 → 3091人」という変化そのものを見せる */}

@@ -68,7 +68,8 @@ app/
 ├── creators/[id]/page.tsx      クリエイター統合ページ（全プラットフォームを1ページに）
 ├── games/page.tsx              ゲームランキング（Twitchのみ。YouTube側にゲーム判定が無いため）
 ├── games/[id]/page.tsx         ゲーム詳細（配信者一覧 + 外部リンク）
-├── streamers/[login]/page.tsx  配信者ページ（Twitch単体。クリップ・アーカイブ）
+├── streamers/[login]/page.tsx  配信者ページ（Twitch単体。配信の記録・クリップ・アーカイブ）
+├── youtube/[channelId]/page.tsx YouTube チャンネルのページ（名寄せしていない人。DB の記録だけで作る）
 └── api/
     ├── cron/snapshot/route.ts        Twitch: 毎時DBに保存（games/snapshots、accounts/live_snapshots）
     ├── cron/youtube-snapshot/route.ts YouTube: 毎時DBに保存（accounts/live_snapshots、監視リスト）
@@ -205,7 +206,8 @@ videos.list の回数は、監視リストの人数と「配信予定・配信�
 
 トップ・急上昇・各詳細ページは `searchParams` / `params` を読むため `ƒ`（表示のたびに
 組み立てる）。外部APIの返事は fetch の `next.revalidate` で R2 に作り置きされる。
-`/games`・`/creators`・`/sitemap.xml` は `○`（ビルド時に作り、5分ごとに作り直す）。
+`/games`・`/creators` は `○`（ビルド時に作り、5分ごとに作り直す）。`/sitemap.xml` も `○` だが1日1回
+（配信者の上位を日ごとの集計14日分から選ぶので、1時間ごとだと読み取り枠を使いすぎる）。
 この3つは**ビルド時に Twitch API と DB を読む**ので、Workers Builds の
 「Build variables」に `TWITCH_CLIENT_*` と `TURSO_*` を入れてある（無いとビルドが失敗する）。
 Twitch のトークン取得を作り置き（force-cache）にしたことで `ƒ` から `○` に変わった
@@ -219,6 +221,12 @@ DBを直接読む（Twitchと違い、表示のたびにAPIを叩けないため
 
 配信者アイコンは表示時にその場で取得し、DBには保存しない
 （Twitchの`getUsersByLogin`、YouTubeの`getChannelIcons`とも同じ方針）。
+
+配信者のリンク先はすべてサイト内にする（名寄せ済み→`/creators/[id]`、それ以外→Twitch は
+`/streamers/[login]`、YouTube は `/youtube/[channelId]`）。YouTube チャンネルのページは
+**YouTube API をアイコンの1回（1日作り置き）しか使わず、DB の記録だけで作る**。sitemap に載せて
+検索エンジンに巡回されるので、表示のたびに API を呼ぶと1日の枠を使い切るため。
+記録に無いチャンネルIDは404にし、名寄せ済みのチャンネルは統合ページへ転送する。
 
 ## UIの約束ごと
 
