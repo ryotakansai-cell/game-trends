@@ -58,6 +58,17 @@ await db.batch(
       captured_at TEXT NOT NULL
     )`,
     `CREATE INDEX IF NOT EXISTS idx_play_snapshots_title_time ON play_snapshots (title_id, captured_at)`,
+    // ゲームの人数の日ごとの集計。毎時の記録は90日で消すので、それより前の推移はここから読む。
+    // 配信の daily_stats と同じく、毎朝の集計（cron/daily）が作る
+    `CREATE TABLE IF NOT EXISTS play_daily (
+      title_id     INTEGER NOT NULL REFERENCES play_titles(id),
+      day          TEXT NOT NULL,     -- 日本時間の日付
+      peak_players INTEGER,           -- その日の毎時の記録の最大（人数非公開のゲームは NULL）
+      avg_players  INTEGER,           -- その日の毎時の記録の平均
+      best_rank    INTEGER NOT NULL,  -- その日の一番良かった順位
+      PRIMARY KEY (title_id, day)
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_play_daily_day ON play_daily (day)`,
     `CREATE INDEX IF NOT EXISTS idx_play_snapshots_time ON play_snapshots (captured_at)`,
 
     // Bluesky に投稿した日（同じ日を二重に投稿しないため。uri は投稿のID。削除するときに使う）
