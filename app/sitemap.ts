@@ -2,6 +2,7 @@ import type { MetadataRoute } from "next";
 import { getCreators } from "@/lib/creators";
 import { getTopGames, isRealGame } from "@/lib/twitch";
 import { getTopUnlinkedAccounts } from "@/lib/account-stats";
+import { getDayRange, shiftDay } from "@/lib/daily";
 import { SITE_URL } from "@/lib/site";
 
 // sitemap.xml を自動生成する。
@@ -102,5 +103,40 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // DBに繋がらないときは静かに諦める
   }
 
-  return [...staticPages, ...creatorPages, ...gamePages, ...streamerPages];
+  // 日付ごとのまとめ。一覧と、直近60日分の各日。
+  // 過去の日の中身は変わらないので changeFrequency は yearly にしている
+  let dailyPages: MetadataRoute.Sitemap = [];
+  try {
+    const range = await getDayRange();
+    if (range) {
+      dailyPages.push({
+        url: `${SITE_URL}/daily`,
+        lastModified: now,
+        changeFrequency: "daily",
+        priority: 0.7,
+      });
+      for (
+        let d = range.last, i = 0;
+        d >= range.first && i < 60;
+        d = shiftDay(d, -1), i++
+      ) {
+        dailyPages.push({
+          url: `${SITE_URL}/daily/${d}`,
+          lastModified: now,
+          changeFrequency: "yearly",
+          priority: 0.6,
+        });
+      }
+    }
+  } catch {
+    dailyPages = [];
+  }
+
+  return [
+    ...staticPages,
+    ...creatorPages,
+    ...gamePages,
+    ...streamerPages,
+    ...dailyPages,
+  ];
 }

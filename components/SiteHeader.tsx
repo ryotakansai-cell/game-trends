@@ -79,7 +79,9 @@ const NAV: NavItem[] = [
     href: "/trending",
     label: "急上昇",
     icon: <TrendingIcon />,
-    match: (p) => p.startsWith("/trending"),
+    // 日付ごとのまとめ（/daily）も「急上昇」の仲間として扱う。
+    // ナビを5つに増やすとスマホの下のタブが窮屈になるため
+    match: (p) => p.startsWith("/trending") || p.startsWith("/daily"),
   },
   {
     href: "/games",
@@ -91,8 +93,11 @@ const NAV: NavItem[] = [
     href: "/creators",
     label: "配信者",
     icon: <CreatorsIcon />,
-    // 配信者ページ（Twitch単体）も「配信者」の仲間として扱う
-    match: (p) => p.startsWith("/creators") || p.startsWith("/streamers"),
+    // 配信者ページ（Twitch単体）と YouTube チャンネルのページも「配信者」の仲間として扱う
+    match: (p) =>
+      p.startsWith("/creators") ||
+      p.startsWith("/streamers") ||
+      p.startsWith("/youtube"),
   },
 ];
 

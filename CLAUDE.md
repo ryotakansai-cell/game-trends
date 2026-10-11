@@ -64,6 +64,10 @@ game-trends のままだが、中身は配信者・配信が主役でゲーム�
 app/
 ├── page.tsx                    トップ（Live Ranking。Twitch/YouTube統合 + プラットフォーム/地域タブ）
 ├── trending/page.tsx           急上昇（24時間前との比較。日本/Global・配信元の絞り込み）
+├── daily/page.tsx              日付ごとのまとめの一覧
+├── daily/[date]/page.tsx       その日のまとめ（最高同接・前日から伸びた人・長時間配信・見られたゲーム）。ナビは「急上昇」の仲間
+├── daily/[date]/opengraph-image.tsx  その日の上位3人の OGP 画像
+├── opengraph-image.tsx         サイト全体の OGP 画像（個別の画像が無いページで使われる）
 ├── creators/page.tsx           クリエイター一覧（名寄せ済みの人物）
 ├── creators/[id]/page.tsx      クリエイター統合ページ（全プラットフォームを1ページに）
 ├── games/page.tsx              ゲームランキング（Twitchのみ。YouTube側にゲーム判定が無いため）
@@ -88,6 +92,8 @@ lib/
 ├── platform.ts                 プラットフォーム共通の型（PlatformContent など）。処理は書かない
 ├── creators.ts                 人物とアカウントのDB読み取り、各libへの振り分け
 ├── daily-stats.ts              日ごとの集計（まとめる・古い記録を消す）
+├── daily.ts                    日付ごとのまとめページのデータ（日本の配信者に絞る）
+├── og.tsx                      OGP 画像の共通部品（日本語フォントの取得・ロゴ・枠）
 ├── account-stats.ts            アカウントの直近30日の統計（daily_stats と、ゲームは毎時の記録から）
 ├── snapshot-range.ts           live_snapshots を時刻の範囲で絞る部品、日本時間の日付
 └── db.ts                       Turso接続（読み書き共通の1関数）と、大量書き込みを500件ずつに分ける部品
@@ -227,6 +233,13 @@ DBを直接読む（Twitchと違い、表示のたびにAPIを叩けないため
 **YouTube API をアイコンの1回（1日作り置き）しか使わず、DB の記録だけで作る**。sitemap に載せて
 検索エンジンに巡回されるので、表示のたびに API を呼ぶと1日の枠を使い切るため。
 記録に無いチャンネルIDは404にし、名寄せ済みのチャンネルは統合ページへ転送する。
+
+OGP 画像（SNS に URL を貼ったときのカード）は `next/og` で作る。日本語フォントが入っていないので、
+Google Fonts から**画像に使う文字だけを切り出したフォント**（ttf・10KB前後）を取ってくる（`lib/og.tsx`）。
+ブラウザらしい User-Agent を付けないと ttf が返る性質を使っている。`npm run preview`（workerd）でも動くことを確認済み。
+日付ページの画像は開かれるたびに作られるので、ページ用の重い集計ではなく `getDailyHeadline`（上位3人と人数だけ）を使う。
+日付ページは「日本の配信者」に絞る（Twitch は日本語、YouTube は監視リスト、名寄せ済み）。
+全世界の上位800配信も記録しているので、絞らないと英語圏の大物で埋まるため。
 
 ## UIの約束ごと
 
