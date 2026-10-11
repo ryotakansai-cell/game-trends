@@ -150,10 +150,29 @@ export async function checkVideos(
 export async function getRecentVideoIdsFromFeeds(
   channelIds: string[],
   days = 7,
-): Promise<{ videoIds: string[]; failed: number }> {
+): Promise<{
+  videoIds: string[];
+  failed: number;
+  failedByStatus: Record<string, number>;
+}> {
   const since = Date.now() - days * 24 * 3600 * 1000;
   const videoIds: string[] = [];
   let failed = 0;
+  // 失敗の内訳（404 / 500 / 例外）。弾かれたのか YouTube 側の不調かを後から見分けるため
+  const failedByStatus: Record<string, number> = {};
+
+  // YouTube の RSS は、同じURLでも 200 / 404 / 500 がまばらに返る不安定な時期がある
+  // （2026-10-11 に Cloudflare からも自宅からも大半が失敗した。他の開発者からも報告がある）。
+  // 失敗したら1回だけ読み直す。何度も読み直しても戻りは小さかった（15件で4→6件）
+  async function fetchFeed(channelId: string) {
+    const url = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
+    // 毎時の確認なので作り置きしない（R2 に100件以上の XML を溜めないため）
+    const res = await fetch(url, { cache: "no-store" });
+    if (res.ok) return res;
+    await res.body?.cancel();
+    await new Promise((r) => setTimeout(r, 1000));
+    return fetch(url, { cache: "no-store" });
+  }
 
   // Cloudflare Workers は同時に開ける接続が6本までなので、6件ずつ読む。
   // 2026-10 に Cloudflare 上で783チャンネルを2回続けて読み、全件成功・約30秒だった
@@ -161,13 +180,11 @@ export async function getRecentVideoIdsFromFeeds(
     await Promise.all(
       channelIds.slice(i, i + 6).map(async (channelId) => {
         try {
-          const res = await fetch(
-            `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`,
-            // 毎時の確認なので作り置きしない（R2 に100件以上の XML を溜めないため）
-            { cache: "no-store" },
-          );
+          const res = await fetchFeed(channelId);
           if (!res.ok) {
             failed++;
+            failedByStatus[res.status] = (failedByStatus[res.status] ?? 0) + 1;
+            await res.body?.cancel();
             return;
           }
           const xml = await res.text();
@@ -185,12 +202,13 @@ export async function getRecentVideoIdsFromFeeds(
         } catch {
           // 1チャンネル読めなくても、他のチャンネルの確認は続ける
           failed++;
+          failedByStatus.error = (failedByStatus.error ?? 0) + 1;
         }
       }),
     );
   }
 
-  return { videoIds, failed };
+  return { videoIds, failed, failedByStatus };
 }
 
 /** 日本向け検索で使うキーワードのローテーション候補 */
