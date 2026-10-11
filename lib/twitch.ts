@@ -104,8 +104,46 @@ export function boxArt(url: string, width = 285, height = 380) {
     .replace("{height}", String(height));
 }
 
+/** IGDB の ID が空なのに、実際にはゲームのもの（Twitch 側の登録漏れ）。
+ *  ID が空かどうかで「雑談などのゲームではない分類」を見分けているので、この2本が
+ *  ゲームランキングから抜け落ちていた（2026-10-11 に Steam との対応づけで発見）。
+ *  32399 = Counter-Strike、29595 = Dota 2 */
+const GAMES_WITHOUT_IGDB = new Set(["32399", "29595"]);
+
 export function isRealGame(game: TwitchGame) {
-  return game.igdb_id !== "";
+  return game.igdb_id !== "" || GAMES_WITHOUT_IGDB.has(game.id);
+}
+
+/** IGDB の ID から Twitch のゲームを引く（1回100件まで）。
+ *  Steam のゲームを Twitch のゲームと結び付けるのに使う。めったに変わらないので1日作り置きする */
+export async function getGamesByIgdbIds(igdbIds: string[]) {
+  const map = new Map<string, TwitchGame>();
+  const unique = [...new Set(igdbIds)].slice(0, 100);
+  if (unique.length === 0) return map;
+  const params = new URLSearchParams();
+  unique.forEach((id) => params.append("igdb_id", id));
+  const games = await twitchFetch<TwitchGame>(
+    `/games?${params.toString()}`,
+    86400,
+  );
+  games.forEach((g) => map.set(g.igdb_id, g));
+  return map;
+}
+
+/** ゲームごとに、上位100配信の視聴者数を合計する（Steam のランキングで Twitch の視聴者数を並べる用）。
+ *  以前は複数のゲームをまとめて1つの問い合わせにしていたが、大きなゲームの配信で上位が埋まり、
+ *  小さな配信の多いゲームは3分の1ほどしか数えられなかった（PUBG：実際1,803人 → 592人）。
+ *  ゲームごとに呼んでも Twitch API は無料で、上限（1分800回）にも余裕がある。5分作り置きされる */
+export async function getViewersForGames(gameIds: string[]) {
+  const ids = [...new Set(gameIds)];
+  const sums = await Promise.all(
+    ids.map((id) =>
+      helixPage<TwitchStream>(`/streams?game_id=${id}&first=100`)
+        .then((p) => p.data.reduce((sum, st) => sum + st.viewer_count, 0))
+        .catch(() => 0),
+    ),
+  );
+  return new Map(ids.map((id, i) => [id, sums[i]]));
 }
 
 export type TwitchStream = {

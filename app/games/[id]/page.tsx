@@ -13,6 +13,7 @@ import {
   formatViewers,
 } from "@/lib/twitch";
 import { getGameDetails } from "@/lib/igdb";
+import { getSteamPlayersForTwitchGame } from "@/lib/steam";
 import { SegmentedTabs } from "@/components/SegmentedTabs";
 
 export const revalidate = 180;
@@ -65,7 +66,11 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
   // IGDBの詳細。Twitchのレスポンスに入っている igdb_id を手がかりに引く。
   // 「Just Chatting」のような非ゲームカテゴリは igdb_id が空なので null が返る。
   // 取れなくてもページは従来どおり表示する（配信者一覧が主役なので）
-  const details = await getGameDetails(game.igdb_id).catch(() => null);
+  // Steam で今遊んでいる人数も一緒に取る（Steam に無いゲームや、結び付けられないものは null）
+  const [details, steam] = await Promise.all([
+    getGameDetails(game.igdb_id).catch(() => null),
+    getSteamPlayersForTwitchGame(game).catch(() => null),
+  ]);
 
   // 配信者アイコンは表示時にその場で取得する（DBには保存しない方針）。
   // getUsersByLogin は100件までまとめて1回で引ける
@@ -131,6 +136,22 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
             </span>
             が視聴中
           </p>
+          {/* Steam で遊んでいる人数。「見るゲームか、遊ぶゲームか」を並べて見せる */}
+          {steam?.players != null && (
+            <p className="mt-1 text-sm text-gray-400">
+              Steamで
+              <span className="font-bold text-gray-100">
+                {formatViewers(steam.players)}人
+              </span>
+              がプレイ中
+              <Link
+                href="/games/steam"
+                className="ml-2 text-xs text-gray-500 transition hover:text-purple-300"
+              >
+                Steamのランキング
+              </Link>
+            </p>
+          )}
 
           {/* IGDBから取れたゲームそのものの情報。取れないときは丸ごと出さない */}
           {details &&

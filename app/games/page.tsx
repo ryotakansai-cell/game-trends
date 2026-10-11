@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
+import { GameTabs } from "@/components/GameTabs";
 import {
   getTopGames,
   getViewerCountByGame,
@@ -47,6 +48,7 @@ export default async function Home() {
             <span className="mt-0.5 block text-gray-500">更新：5分ごと</span>
           </>
         }
+        filters={<GameTabs current="twitch" />}
       />
 
       <ul className="mt-10 grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-6">

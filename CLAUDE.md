@@ -70,7 +70,8 @@ app/
 ├── opengraph-image.tsx         サイト全体の OGP 画像（個別の画像が無いページで使われる）
 ├── creators/page.tsx           配信者一覧・検索（日本の配信者全体。配信中 / 7日の最高同接 / 7日の配信時間で並べ替え）
 ├── creators/[id]/page.tsx      クリエイター統合ページ（全プラットフォームを1ページに）
-├── games/page.tsx              ゲームランキング（Twitchのみ。YouTube側にゲーム判定が無いため）
+├── games/page.tsx              ゲームランキング（Twitch で見られている順。YouTube側にゲーム判定が無いため）
+├── games/steam/page.tsx        ゲームランキング（Steam で遊ばれている順。Twitch の視聴者数・日本の配信数と並べる）
 ├── games/[id]/page.tsx         ゲーム詳細（配信者一覧 + 外部リンク）
 ├── streamers/[login]/page.tsx  配信者ページ（Twitch単体。配信の記録・クリップ・アーカイブ）
 ├── youtube/[channelId]/page.tsx YouTube チャンネルのページ（名寄せしていない人。DB の記録だけで作る）
@@ -101,6 +102,7 @@ lib/
 ├── streamer-list.ts            配信者タブの一覧（並び替え）と検索
 ├── stats-extras.ts             配信者ページの追加情報（時間帯・同じゲームの人・選んだ日の配信）を3ページ共通で取る
 ├── og.tsx                      OGP 画像の共通部品（日本語フォントの取得・ロゴ・枠）
+├── steam.ts                    Steam の人数（鍵なしの公開 API）と、Twitch のゲームへの結び付け（IGDB 経由）
 ├── bluesky.ts                  Bluesky への投稿（朝8時に前日のまとめ、9・12・18・21時にいま見られている配信）
 ├── account-stats.ts            アカウントの直近30日の統計（daily_stats と、ゲームは毎時の記録から）
 ├── snapshot-range.ts           live_snapshots を時刻の範囲で絞る部品、日本時間の日付
@@ -254,6 +256,13 @@ Google Fonts から**画像に使う文字だけを切り出したフォント**
 日付ページの画像は開かれるたびに作られるので、ページ用の重い集計ではなく `getDailyHeadline`（上位3人と人数だけ）を使う。
 日付ページは「日本の配信者」に絞る（Twitch は日本語、YouTube は監視リスト、名寄せ済み）。
 全世界の上位800配信も記録しているので、絞らないと英語圏の大物で埋まるため。
+
+Steam のランキング（`lib/steam.ts`）は鍵なしの公開 API。Steam のゲームを Twitch のゲームに結び付けるのは
+Steam のID → IGDB（external_games、Steam は external_game_source = 1）→ Twitch（igdb_id）。上位100のうち86本が結べた。
+Twitch 側の Counter-Strike と Dota 2 は IGDB の ID が空なので手で対応を書いている（`STEAM_TO_TWITCH`）。
+同じ理由で、この2本は「IGDB の ID が空＝ゲームではない分類」の判定からも例外にしている（`isRealGame`）。
+以前はこの判定でゲームランキングから抜け落ちていた。Twitch の視聴者数はゲームごとに上位100配信を数える
+（複数のゲームをまとめて聞くと、小さな配信の多いゲームが3分の1ほどしか数えられなかった）。
 
 ## UIの約束ごと
 
