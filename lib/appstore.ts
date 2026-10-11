@@ -26,8 +26,19 @@ export async function getAppStoreRanking(
 ): Promise<AppStoreGame[]> {
   const res = await fetch(
     `https://itunes.apple.com/jp/rss/${FEED[chart]}/limit=${limit}/genre=6014/json`,
-    { next: { revalidate: 3600 } },
+    {
+      // Apple は Cloudflare のサーバーからの、ブラウザらしくない読み取りを 403 で拒否する
+      // （2026-10-11 に Cloudflare 上で確認。手元の回線からは User-Agent なしでも読める）。
+      // この RSS はランキングをサイトに載せるために公開されているものなので、ブラウザと同じ形で読む
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36",
+        Accept: "application/json",
+      },
+      next: { revalidate: 3600 },
+    },
   );
+  if (!res.ok) throw new Error(`App Store の RSS が ${res.status}`);
   const json = await res.json();
   type Entry = {
     id: { attributes: { "im:id": string }; label: string };

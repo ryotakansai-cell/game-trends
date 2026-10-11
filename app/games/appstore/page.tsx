@@ -17,7 +17,8 @@ type Props = { searchParams: Promise<{ chart?: string }> };
 export default async function AppStoreGamesPage({ searchParams }: Props) {
   const { chart } = await searchParams;
   const current: AppStoreChart = chart === "free" ? "free" : "grossing";
-  const games = await getAppStoreRanking(current, 50);
+  // 取れなかったときはページごと 500 にせず、空の一覧と案内を出す
+  const games = await getAppStoreRanking(current, 50).catch(() => []);
 
   return (
     <main className="mx-auto w-full max-w-6xl px-6 py-6 sm:py-12">
@@ -52,6 +53,13 @@ export default async function AppStoreGamesPage({ searchParams }: Props) {
         }
         filters={<GameTabs current="appstore" />}
       />
+
+      {games.length === 0 && (
+        <p className="mt-8 text-sm text-gray-500">
+          App Store
+          のランキングを取得できませんでした。しばらくしてから開き直してください。
+        </p>
+      )}
 
       <ol className="mt-8 grid grid-cols-1 gap-x-8 sm:grid-cols-2">
         {games.map((g) => (
