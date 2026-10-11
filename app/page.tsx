@@ -13,6 +13,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { PlatformFilter } from "@/components/PlatformFilter";
 import { RelativeTime } from "@/components/RelativeTime";
 import { LiveCards, LiveList, type LiveRow } from "@/components/LiveViews";
+import { ViewToggle, type View } from "@/components/ViewToggle";
 
 export const revalidate = 180;
 
@@ -24,8 +25,6 @@ export const metadata = {
 type Props = {
   searchParams: Promise<{ lang?: string; platform?: string; view?: string }>;
 };
-
-type View = "card" | "list";
 
 // カードは大きいので40件、リストは1行が小さいので100件まで出す
 const LIMIT: Record<View, number> = { card: 40, list: 100 };
@@ -143,26 +142,14 @@ export default async function Home({ searchParams }: Props) {
             hrefFor={(p) => buildHref(p, isJapanese, view)}
           />
         }
+        // 表示の形（カード／リスト）。地域より重要度が低いのでアイコンだけ（components/ViewToggle.tsx）
+        view={
+          <ViewToggle
+            view={view}
+            hrefFor={(v) => buildHref(selected, isJapanese, v)}
+          />
+        }
       />
-
-      {/* 表示の形の切り替え。ずっと2択なので、地域と同じつながったスイッチにする。
-          スマホでは上に固定した絞り込みの行が既にいっぱいなので、そこには入れず一覧のすぐ上に置く */}
-      <div className="mt-6 flex justify-end">
-        <SegmentedTabs
-          options={[
-            {
-              label: "カード",
-              href: buildHref(selected, isJapanese, "card"),
-              active: view === "card",
-            },
-            {
-              label: "リスト",
-              href: buildHref(selected, isJapanese, "list"),
-              active: view === "list",
-            },
-          ]}
-        />
-      </div>
 
       {view === "list" ? (
         <LiveList rows={rows} showPlatform={selected === "all"} />
