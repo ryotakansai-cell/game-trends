@@ -86,6 +86,25 @@ export async function GET(request: NextRequest) {
       r.rows.forEach((row) => done.add(String(row.video_id)));
     }
     const toCheck = feedIds.filter((id) => !done.has(id));
+
+    // ⑥' 前に「配信予定・配信中」だった動画は、今回の RSS に載っていなくても確かめる。
+    // RSS は不安定で大半が読めない時間帯がある（2026-10-11 に1,236件中1,074件が失敗）。
+    // 予約枠や配信中の動画は前もって分かっているので、RSS が止まっても記録を途切れさせない。
+    // 7日より前に見つけたものは、ずっと待機中の枠（フリーチャット）などなので外す
+    const knownPending = await db.execute({
+      sql: `SELECT video_id FROM youtube_video_checks
+            WHERE status = 'pending' AND checked_at >= ?`,
+      args: [new Date(now.getTime() - 7 * 24 * 3600 * 1000).toISOString()],
+    });
+    const toCheckSet = new Set(toCheck);
+    for (const row of knownPending.rows) {
+      const id = String(row.video_id);
+      if (!found.has(id) && !toCheckSet.has(id)) {
+        toCheck.push(id);
+        toCheckSet.add(id);
+      }
+    }
+
     // 監視リストは日本向けの検索から作っているので、日本向けで見つけた扱いにする
     toCheck.forEach((id) => found.set(id, { region: "jp" }));
 
@@ -99,10 +118,13 @@ export async function GET(request: NextRequest) {
       global_keyword: globalKeyword,
       searched: searchedIds.size,
       watch_channels: watch.rows.length,
-      // feed_failed が増えたら RSS が弾かれている
+      // feed_failed が増えたら RSS が読めていない。内訳が 429 / 403 なら弾かれている、
+      // 404 / 500 がまばらなら YouTube 側の不調（2026-10-11 に起きた）
       feed_failed: feeds.failed,
+      feed_failed_by_status: feeds.failedByStatus,
       feed_videos: feedIds.length,
       feed_skipped_done: done.size,
+      known_pending: knownPending.rows.length,
       videos_list_units: Math.ceil(videoIds.length / 50),
       live: videos.length,
       live_from_feeds: liveFromFeeds.length,
