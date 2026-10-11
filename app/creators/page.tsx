@@ -1,30 +1,75 @@
 import Image from "next/image";
 import Link from "next/link";
-import { PageHeader } from "@/components/PageHeader";
-import { getCreators } from "@/lib/creators";
-import { getUsersByLogin } from "@/lib/twitch";
-
 import type { Metadata } from "next";
+import { PageHeader } from "@/components/PageHeader";
+import { FilterPills } from "@/components/FilterPills";
+import { TwitchIcon, YouTubeIcon } from "@/components/PlatformIcons";
+import {
+  getStreamerList,
+  searchStreamers,
+  type ListEntry,
+  type ListSort,
+} from "@/lib/streamer-list";
+import { getUsersByLogin, formatViewers } from "@/lib/twitch";
+import { getChannelIcons } from "@/lib/youtube";
 
 export const metadata: Metadata = {
-  title: "配信者一覧（プラットフォーム横断）",
+  title: "配信者一覧・検索",
   description:
-    "Twitch・YouTubeのアカウントを同じ人物として紐付けた配信者の一覧。アイコンから統合ページへ移動できます。",
+    "Twitch・YouTubeの日本の配信者を、配信中・直近7日の最高同接・配信時間で並べた一覧。名前で検索して、同接や配信時間の記録を見られます。",
   alternates: { canonical: "/creators" },
 };
 
-// YouTube APIを使わない（Twitchのみ）ので短めでよい
-export const revalidate = 600;
+type Props = {
+  searchParams: Promise<{ q?: string; sort?: string }>;
+};
 
-export default async function CreatorsPage() {
-  const creators = await getCreators();
+const SORTS: { value: ListSort; label: string; unit: (v: number) => string }[] =
+  [
+    {
+      value: "week",
+      label: "7日の最高同接",
+      unit: (v) => `${formatViewers(v)}人`,
+    },
+    {
+      value: "live",
+      label: "配信中",
+      unit: (v) => `${formatViewers(v)}人が視聴中`,
+    },
+    { value: "hours", label: "7日の配信時間", unit: (v) => `${v}時間` },
+  ];
 
-  // アイコンはTwitch本人アカウントのものを使う。
-  // getUsersByLogin は100件まで1回のAPI呼び出しでまとめて取れる
-  const logins = creators
-    .map((c) => c.twitchLogin)
-    .filter((l): l is string => l !== null);
-  const users = await getUsersByLogin(logins);
+function entryHref(e: ListEntry) {
+  if (e.creatorId !== null) return `/creators/${e.creatorId}`;
+  return e.platform === "twitch"
+    ? `/streamers/${e.login}`
+    : `/youtube/${e.platformId}`;
+}
+
+export default async function CreatorsPage({ searchParams }: Props) {
+  const { q, sort } = await searchParams;
+  const query = q?.trim().slice(0, 50) ?? "";
+  const current = SORTS.find((s) => s.value === sort) ?? SORTS[0];
+
+  const entries = query
+    ? await searchStreamers(query)
+    : await getStreamerList(current.value);
+
+  // アイコンは代表のアカウントから。Twitch は100人まで1回、YouTube は50件で1ユニット（1日作り置き）
+  const [twitchUsers, youtubeIcons] = await Promise.all([
+    getUsersByLogin(
+      entries
+        .filter((e) => e.platform === "twitch" && e.login)
+        .map((e) => e.login!),
+    ).catch(() => new Map()),
+    getChannelIcons(
+      entries.filter((e) => e.platform === "youtube").map((e) => e.platformId),
+    ).catch(() => new Map<string, string>()),
+  ]);
+  const iconOf = (e: ListEntry) =>
+    e.platform === "twitch"
+      ? twitchUsers.get(e.login ?? "")?.profile_image_url
+      : youtubeIcons.get(e.platformId);
 
   return (
     <main className="mx-auto w-full max-w-6xl px-6 py-6 sm:py-12">
@@ -32,51 +77,114 @@ export default async function CreatorsPage() {
         eyebrow="CREATORS"
         title="配信者"
         summary={
-          <>プラットフォームをまたいで紐付けた配信者 ・ {creators.length}人</>
+          query
+            ? `「${query}」の検索結果 ・ ${entries.length}人`
+            : "Twitch・YouTubeの日本の配信者"
+        }
+        filters={
+          query ? undefined : (
+            <FilterPills
+              options={SORTS.map((s) => ({
+                label: s.label,
+                href:
+                  s.value === "week"
+                    ? "/creators"
+                    : `/creators?sort=${s.value}`,
+                active: s.value === current.value,
+              }))}
+            />
+          )
         }
       />
 
-      {creators.length === 0 ? (
+      {/* 検索。フォームの送信先を /creators?q=… にするだけなので、JavaScript を使わずに動く */}
+      <form action="/creators" className="mt-6 flex gap-2">
+        <input
+          type="search"
+          name="q"
+          defaultValue={query}
+          placeholder="配信者の名前で探す"
+          aria-label="配信者の名前で探す"
+          className="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-gray-100 placeholder:text-gray-500 focus:border-purple-400 focus:outline-none"
+        />
+        <button
+          type="submit"
+          className="shrink-0 rounded-lg border border-white/10 px-4 text-sm text-gray-300 transition hover:border-purple-400 hover:text-purple-300"
+        >
+          検索
+        </button>
+      </form>
+      {query && (
+        <Link
+          href="/creators"
+          className="mt-2 inline-block text-xs text-gray-500 transition hover:text-purple-300"
+        >
+          検索をやめて一覧に戻る
+        </Link>
+      )}
+
+      {entries.length === 0 ? (
         <p className="mt-8 text-sm text-gray-500">
-          まだ紐付けが登録されていません。
+          {query
+            ? "見つかりませんでした。別の書き方（ひらがな・英字など）でも試してみてください。"
+            : "まだ記録がありません。"}
         </p>
       ) : (
-        <ul className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {creators.map((creator) => {
-            const icon = creator.twitchLogin
-              ? users.get(creator.twitchLogin)?.profile_image_url
-              : undefined;
-
+        <ol className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {entries.map((e, i) => {
+            const icon = iconOf(e);
             return (
-              <li key={creator.id}>
+              <li key={e.key}>
                 <Link
-                  href={`/creators/${creator.id}`}
-                  className="flex items-center gap-4 rounded-xl border border-white/10 bg-white/5 p-4 transition hover:border-purple-400/50"
+                  href={entryHref(e)}
+                  className="group flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 p-3 transition hover:border-purple-400/50"
                 >
-                  {icon && (
-                    <Image
-                      src={icon}
-                      alt={creator.displayName}
-                      width={56}
-                      height={56}
-                      className="shrink-0 rounded-full ring-2 ring-purple-500/30"
-                    />
+                  {!query && (
+                    <span className="w-6 shrink-0 text-right text-sm tabular-nums text-gray-500">
+                      {i + 1}
+                    </span>
                   )}
+                  <div
+                    className={`relative h-12 w-12 shrink-0 overflow-hidden rounded-full bg-white/5 ring-2 ${
+                      e.creatorId !== null
+                        ? "ring-purple-500/40"
+                        : "ring-white/10"
+                    }`}
+                  >
+                    {icon && (
+                      <Image
+                        src={icon}
+                        alt={e.displayName}
+                        fill
+                        className="object-cover"
+                        unoptimized
+                      />
+                    )}
+                  </div>
                   {/* min-w-0 を付けないと truncate が効かない（flexの子の既定は縮まない） */}
-                  <div className="min-w-0">
-                    <p className="truncate font-bold text-gray-100">
-                      {creator.displayName}
+                  <div className="min-w-0 flex-1">
+                    <p className="flex items-center gap-1.5">
+                      <span className="truncate font-bold text-gray-100 group-hover:text-purple-300">
+                        {e.displayName}
+                      </span>
+                      <span className="flex shrink-0 gap-1 text-gray-500">
+                        {e.platforms.includes("twitch") && <TwitchIcon />}
+                        {e.platforms.includes("youtube") && <YouTubeIcon />}
+                      </span>
                     </p>
-                    <p className="mt-1 text-xs text-gray-500">
-                      {creator.accountCount}アカウント ・{" "}
-                      {creator.platforms.join(" / ")}
+                    <p className="mt-0.5 text-xs text-gray-500">
+                      {query
+                        ? e.value > 0
+                          ? `7日の最高同接 ${formatViewers(e.value)}人`
+                          : "直近7日の記録なし"
+                        : current.unit(e.value)}
                     </p>
                   </div>
                 </Link>
               </li>
             );
           })}
-        </ul>
+        </ol>
       )}
     </main>
   );

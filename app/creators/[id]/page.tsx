@@ -1,6 +1,7 @@
 import { cache } from "react";
 import type { Metadata } from "next";
 import Image from "next/image";
+import { ShareOnX } from "@/components/ShareOnX";
 import { notFound } from "next/navigation";
 import {
   getCreator,
@@ -283,6 +284,10 @@ export default async function CreatorPage({ params, searchParams }: Props) {
                 {c.label}・{relationLabel(c.relation)}
               </a>
             ))}
+            <ShareOnX
+              text={`${creator.display_name}の同接・配信時間`}
+              path={`/creators/${creatorId}`}
+            />
           </div>
         </div>
       </div>

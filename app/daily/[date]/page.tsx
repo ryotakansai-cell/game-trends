@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Image from "next/image";
+import { ShareOnX } from "@/components/ShareOnX";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cache } from "react";
@@ -195,6 +196,12 @@ export default async function DailyPage({ params }: Props) {
               <Link href="/daily" className="transition hover:text-purple-300">
                 日付の一覧
               </Link>
+            </span>
+            <span className="mt-3 block">
+              <ShareOnX
+                text={`${dayTitle(date)}の配信ランキング`}
+                path={`/daily/${date}`}
+              />
             </span>
           </>
         }

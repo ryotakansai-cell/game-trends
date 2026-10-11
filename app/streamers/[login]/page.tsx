@@ -1,6 +1,7 @@
 import { cache } from "react";
 import type { Metadata } from "next";
 import Image from "next/image";
+import { ShareOnX } from "@/components/ShareOnX";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
@@ -129,6 +130,10 @@ export default async function StreamerPage({ params }: Props) {
                 {link.label}
               </a>
             ))}
+            <ShareOnX
+              text={`${user.display_name}の同接・配信時間`}
+              path={`/streamers/${login}`}
+            />
           </div>
         </div>
       </div>

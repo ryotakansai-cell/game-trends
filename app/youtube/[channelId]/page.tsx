@@ -1,6 +1,7 @@
 import { cache } from "react";
 import type { Metadata } from "next";
 import Image from "next/image";
+import { ShareOnX } from "@/components/ShareOnX";
 import { notFound, redirect } from "next/navigation";
 import {
   getAccountInfo,
@@ -117,6 +118,10 @@ export default async function YouTubeChannelPage({ params }: Props) {
                 {link.label}
               </a>
             ))}
+            <ShareOnX
+              text={`${name}の同接・配信時間`}
+              path={`/youtube/${channelId}`}
+            />
           </div>
         </div>
       </div>
