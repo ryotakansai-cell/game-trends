@@ -154,7 +154,13 @@ export async function postDailyRanking(
   preview: boolean,
 ): Promise<BlueskyReport> {
   // コピーのときに付きやすい「先頭の @」と「前後の空白・改行」は取り除く
-  const handle = process.env.BLUESKY_HANDLE?.trim().replace(/^@/, "");
+  // 「.」を含まない（stream-trend だけ）なら .bsky.social を補う。ログインには末尾まで必要で、
+  // 最初の登録で末尾を省いてログインに失敗したため（2026-10-11）。独自ドメインのハンドルは「.」を含むのでそのまま
+  const rawHandle = process.env.BLUESKY_HANDLE?.trim().replace(/^@/, "");
+  const handle =
+    rawHandle && !rawHandle.includes(".")
+      ? `${rawHandle}.bsky.social`
+      : rawHandle;
   const password = process.env.BLUESKY_APP_PASSWORD?.trim();
   const enabled = Boolean(handle && password) && !preview;
   const report: BlueskyReport = { enabled };
