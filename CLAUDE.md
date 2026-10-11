@@ -79,13 +79,15 @@ components/
 ├── SegmentedTabs.tsx           日本/Global の切り替え（つながった2択スイッチ）
 ├── FilterPills.tsx             配信元の丸ボタン（すべて/Twitch/YouTube。増えても折り返す）
 ├── PlatformIcons.tsx           配信元の単色アイコン（色は付けず currentColor）
-└── RelativeTime.tsx            「◯分前」（ブラウザ側で計算。作り置きされても数字が古くならない）
+├── RelativeTime.tsx            「◯分前」（ブラウザ側で計算。作り置きされても数字が古くならない）
+└── StreamStats.tsx             配信者ページの「配信の記録」（数字・日ごとの最高同接の棒グラフ・よく遊んだゲーム・比較表）
 lib/
 ├── twitch.ts                   Twitch APIとの通信（唯一の窓口）
 ├── youtube.ts                  YouTube Data API v3との通信 + DBからのランキング読み取り
 ├── platform.ts                 プラットフォーム共通の型（PlatformContent など）。処理は書かない
 ├── creators.ts                 人物とアカウントのDB読み取り、各libへの振り分け
 ├── daily-stats.ts              日ごとの集計（まとめる・古い記録を消す）
+├── account-stats.ts            アカウントの直近30日の統計（daily_stats と、ゲームは毎時の記録から）
 ├── snapshot-range.ts           live_snapshots を時刻の範囲で絞る部品、日本時間の日付
 └── db.ts                       Turso接続（読み書き共通の1関数）と、大量書き込みを500件ずつに分ける部品
 scripts/
@@ -130,6 +132,10 @@ self（本人）/ clip（切り抜き）/ archive（アーカイブ）を区別�
 `daily_stats`（アカウント×日本時間の日で1行：最高・平均同接、配信時間、一番遊んだゲーム）を
 毎日 `cron/daily` が作り、その後で90日より古い `live_snapshots` を消す。
 必ず「まとめてから消す」順で、集計が消す範囲まで済んでいなければ消さない（`lib/daily-stats.ts`）。
+毎朝の集計が動かない日があった（2026-10-11。手動では正常に終わった）ので、毎時の Twitch の収集が
+「昨日の分が無ければまとめる」保険も持っている（`rollupIfBehind`。あれば何もしない）。
+配信者ページの統計は本人アカウントだけで出す（切り抜きの同接は本人の数字ではないため）。
+名寄せ済みの人は、配信時間が一番長いアカウントで数字とグラフを出し、プラットフォームごとの比較表を添える。
 配信者の統計やグラフは `daily_stats` から読む（読む行数が毎時の記録の数分の一で済む）。
 間引き（古い毎時の記録を一部だけ残す）にしなかったのは、統計に必要な値は集計に全部あり、
 残しても使い道が無いため。
