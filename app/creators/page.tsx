@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { PageHeader } from "@/components/PageHeader";
 import { FilterPills } from "@/components/FilterPills";
 import { PlatformIcon } from "@/components/PlatformIcons";
+import { CreatorSearch } from "@/components/CreatorSearch";
 import {
   getStreamerList,
   searchStreamers,
@@ -84,22 +85,8 @@ export default async function CreatorsPage({ searchParams }: Props) {
       />
 
       {/* 検索。フォームの送信先を /creators?q=… にするだけなので、JavaScript を使わずに動く */}
-      <form action="/creators" className="mt-6 flex gap-2">
-        <input
-          type="search"
-          name="q"
-          defaultValue={query}
-          placeholder="配信者の名前で探す"
-          aria-label="配信者の名前で探す"
-          className="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-gray-100 placeholder:text-gray-500 focus:border-purple-400 focus:outline-none"
-        />
-        <button
-          type="submit"
-          className="shrink-0 rounded-lg border border-white/10 px-4 text-sm text-gray-300 transition hover:border-purple-400 hover:text-purple-300"
-        >
-          検索
-        </button>
-      </form>
+      {/* 打つと候補が出て、Enter で検索結果のページへ（components/CreatorSearch.tsx） */}
+      <CreatorSearch key={query} defaultValue={query} />
       {query && (
         <Link
           href="/creators"

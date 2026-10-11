@@ -1,11 +1,8 @@
-import Image from "next/image";
-import Link from "next/link";
 import { formatViewers } from "@/lib/twitch";
 import { getCreatorIdMap } from "@/lib/creators";
 import {
   PLATFORM_IDS,
   PLATFORMS,
-  accountHref,
   accountKey,
   isPlatformId,
   type PlatformId,
@@ -15,6 +12,7 @@ import { SegmentedTabs } from "@/components/SegmentedTabs";
 import { PageHeader } from "@/components/PageHeader";
 import { PlatformFilter } from "@/components/PlatformFilter";
 import { RelativeTime } from "@/components/RelativeTime";
+import { LiveCards, LiveList, type LiveRow } from "@/components/LiveViews";
 
 export const revalidate = 180;
 
@@ -24,16 +22,25 @@ export const metadata = {
 };
 
 type Props = {
-  searchParams: Promise<{ lang?: string; platform?: string }>;
+  searchParams: Promise<{ lang?: string; platform?: string; view?: string }>;
 };
 
-const LIMIT = 40;
+type View = "card" | "list";
 
-/** 選んだタブを維持したまま、リンク先のURLを組み立てる */
-function buildHref(platform: PlatformId | "all", isJapanese: boolean) {
+// カードは大きいので40件、リストは1行が小さいので100件まで出す
+const LIMIT: Record<View, number> = { card: 40, list: 100 };
+
+/** 選んだタブ（配信元・地域・表示の形）を維持したまま、リンク先のURLを組み立てる。
+ *  表示の形も URL に残すので、リスト表示のままブックマークや共有ができる */
+function buildHref(
+  platform: PlatformId | "all",
+  isJapanese: boolean,
+  view: View,
+) {
   const params = new URLSearchParams();
   if (platform !== "all") params.set("platform", platform);
   if (!isJapanese) params.set("lang", "all");
+  if (view === "list") params.set("view", "list");
   const qs = params.toString();
   return qs ? `/?${qs}` : "/";
 }
@@ -51,8 +58,10 @@ function updateLabel(platforms: PlatformId[]) {
 }
 
 export default async function Home({ searchParams }: Props) {
-  const { lang, platform } = await searchParams;
+  const { lang, platform, view: viewParam } = await searchParams;
   const isJapanese = lang !== "all";
+  const view: View = viewParam === "list" ? "list" : "card";
+  const limit = LIMIT[view];
   const selected = isPlatformId(platform) ? platform : "all";
   const targets = selected === "all" ? [...PLATFORM_IDS] : [selected];
 
@@ -60,12 +69,12 @@ export default async function Home({ searchParams }: Props) {
   // 取り方（API か DB か）は配信元ごとに違うが、LOADERS が同じ形（LiveEntry）にそろえて返す。
   // 1つの配信元が取れなくても、ほかの配信元は出す
   const lists = await Promise.all(
-    targets.map((p) => LOADERS[p].live(isJapanese, LIMIT).catch(() => [])),
+    targets.map((p) => LOADERS[p].live(isJapanese, limit).catch(() => [])),
   );
   const entries = lists
     .flat()
     .sort((a, b) => b.viewers - a.viewers)
-    .slice(0, LIMIT);
+    .slice(0, limit);
 
   // アイコンと名寄せは、並べた後の上位だけ調べる（表に出ない分まで API や DB を読まない）
   const [icons, creatorIds] = await Promise.all([
@@ -73,6 +82,11 @@ export default async function Home({ searchParams }: Props) {
     getCreatorIdMap(entries),
   ]);
 
+  const rows: LiveRow[] = entries.map((entry) => ({
+    entry,
+    creatorId: creatorIds.get(accountKey(entry)) ?? null,
+    iconUrl: entry.iconUrl ?? icons.get(accountKey(entry)),
+  }));
   const totalViewers = entries.reduce((sum, e) => sum + e.viewers, 0);
   // DB の毎時の記録から作った配信元（YouTube）の、最終収集の時刻
   const collectedAt = lists
@@ -112,12 +126,12 @@ export default async function Home({ searchParams }: Props) {
             options={[
               {
                 label: "日本",
-                href: buildHref(selected, true),
+                href: buildHref(selected, true, view),
                 active: isJapanese,
               },
               {
                 label: "Global",
-                href: buildHref(selected, false),
+                href: buildHref(selected, false, view),
                 active: !isJapanese,
               },
             ]}
@@ -126,98 +140,35 @@ export default async function Home({ searchParams }: Props) {
         filters={
           <PlatformFilter
             selected={selected}
-            hrefFor={(p) => buildHref(p, isJapanese)}
+            hrefFor={(p) => buildHref(p, isJapanese, view)}
           />
         }
       />
 
-      <ul className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {entries.map((entry, index) => {
-          const creatorId = creatorIds.get(accountKey(entry)) ?? null;
-          const iconUrl = entry.iconUrl ?? icons.get(accountKey(entry));
-          return (
-            <li key={entry.key} className="group">
-              <a
-                href={entry.watchHref}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <div className="relative aspect-video overflow-hidden rounded-lg border border-white/10 bg-white/5">
-                  <Image
-                    src={entry.thumbnailUrl}
-                    alt={entry.title}
-                    fill
-                    className="object-cover transition duration-300 group-hover:scale-105"
-                    unoptimized
-                  />
-                  <span className="absolute left-2 top-2 rounded bg-black/70 px-2 py-0.5 text-xs font-bold text-white">
-                    {index + 1}
-                  </span>
-                  <span className="absolute right-2 top-2 flex items-center gap-1 rounded bg-red-600/90 px-2 py-0.5 text-xs font-bold text-white">
-                    <span className="h-1.5 w-1.5 rounded-full bg-white" />
-                    {formatViewers(entry.viewers)}
-                  </span>
-                  {selected === "all" && (
-                    <span className="absolute bottom-2 right-2 rounded bg-black/70 px-2 py-0.5 text-xs text-gray-200">
-                      {PLATFORMS[entry.platform].label}
-                    </span>
-                  )}
-                  {entry.elapsed && (
-                    <span className="absolute bottom-2 left-2 rounded bg-black/70 px-2 py-0.5 text-xs text-gray-200">
-                      {entry.elapsed}
-                    </span>
-                  )}
-                </div>
-              </a>
+      {/* 表示の形の切り替え。ずっと2択なので、地域と同じつながったスイッチにする。
+          スマホでは上に固定した絞り込みの行が既にいっぱいなので、そこには入れず一覧のすぐ上に置く */}
+      <div className="mt-6 flex justify-end">
+        <SegmentedTabs
+          options={[
+            {
+              label: "カード",
+              href: buildHref(selected, isJapanese, "card"),
+              active: view === "card",
+            },
+            {
+              label: "リスト",
+              href: buildHref(selected, isJapanese, "list"),
+              active: view === "list",
+            },
+          ]}
+        />
+      </div>
 
-              <p
-                className="mt-3 truncate font-bold text-gray-100"
-                title={entry.title}
-              >
-                {entry.title}
-              </p>
-
-              {/* 配信者名とゲーム名は、長ければ「…」で省略する。名前のリンクに shrink-0 が
-                  付いていた頃は縮まずに画面の外まで伸び、スマホでページごと横にずれていた。
-                  縮むのは文字だけで、アイコンは shrink-0 で形を保つ */}
-              <div className="mt-2 flex min-w-0 items-center gap-2 text-sm">
-                {/* 配信者のリンク先はすべてサイト内（名寄せ済み→統合ページ、
-                    それ以外→配信元ごとの配信者ページ） */}
-                <Link
-                  href={accountHref({ ...entry, creatorId })}
-                  className="flex min-w-0 items-center gap-2 text-gray-300 hover:text-purple-300"
-                >
-                  {iconUrl && (
-                    <Image
-                      src={iconUrl}
-                      alt={entry.channelName}
-                      width={28}
-                      height={28}
-                      className={`shrink-0 rounded-full ring-1 ${
-                        creatorId !== null
-                          ? "ring-purple-400/70"
-                          : "ring-white/10"
-                      }`}
-                    />
-                  )}
-                  <span className="truncate">{entry.channelName}</span>
-                </Link>
-                {entry.gameName && entry.gameId && (
-                  <>
-                    <span className="text-gray-700">·</span>
-                    <Link
-                      href={`/games/${entry.gameId}`}
-                      className="truncate text-xs text-gray-200 transition hover:text-purple-400"
-                    >
-                      {entry.gameName}
-                    </Link>
-                  </>
-                )}
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+      {view === "list" ? (
+        <LiveList rows={rows} showPlatform={selected === "all"} />
+      ) : (
+        <LiveCards rows={rows} showPlatform={selected === "all"} />
+      )}
     </main>
   );
 }

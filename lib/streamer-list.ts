@@ -130,3 +130,23 @@ export async function searchStreamers(q: string, limit = 40) {
   });
   return toEntries(r.rows, limit);
 }
+
+/** 検索欄の候補（予測検索）に使う一覧。直近14日に配信した日本の配信者を、最高同接の大きい順に。
+ *  打つたびにサーバーへ問い合わせると、1文字ごとにアカウントの表（2万行以上）を全部読むことになるので、
+ *  一覧を1回だけブラウザに渡し、絞り込みはブラウザでやる（/creators/suggest。数時間作り置き） */
+export async function getSuggestEntries(limit = 2000) {
+  const db = getDbClient();
+  const since = jstDay(new Date(Date.now() - 14 * 24 * 3600 * 1000));
+  const r = await db.execute({
+    sql: `SELECT ${COLUMNS}, MAX(d.peak_viewers) AS value
+          FROM daily_stats d
+          JOIN accounts a ON a.id = d.account_id
+          LEFT JOIN creators c ON c.id = a.creator_id
+          WHERE d.day >= ? AND ${JAPAN_FILTER}
+          GROUP BY a.id
+          ORDER BY value DESC
+          LIMIT ?`,
+    args: [since, limit * 2],
+  });
+  return toEntries(r.rows, limit);
+}
