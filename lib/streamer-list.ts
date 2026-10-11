@@ -132,21 +132,31 @@ export async function searchStreamers(q: string, limit = 40) {
 }
 
 /** 検索欄の候補（予測検索）に使う一覧。直近14日に配信した日本の配信者を、最高同接の大きい順に。
+ *  日ごとの集計（昨日まで）に加えて、直近24時間の毎時の記録も見る。集計だけだと、今日初めて記録に入った人
+ *  （新しく足した配信元の人や新人）が翌朝まで候補に出なかった（2026-10-11、ツイキャスのコレコレが出なかった）。
  *  打つたびにサーバーへ問い合わせると、1文字ごとにアカウントの表（2万行以上）を全部読むことになるので、
  *  一覧を1回だけブラウザに渡し、絞り込みはブラウザでやる（/creators/suggest。数時間作り置き） */
 export async function getSuggestEntries(limit = 2000) {
   const db = getDbClient();
-  const since = jstDay(new Date(Date.now() - 14 * 24 * 3600 * 1000));
+  const sinceDay = jstDay(new Date(Date.now() - 14 * 24 * 3600 * 1000));
+  const since24h = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
   const r = await db.execute({
-    sql: `SELECT ${COLUMNS}, MAX(d.peak_viewers) AS value
-          FROM daily_stats d
-          JOIN accounts a ON a.id = d.account_id
+    sql: `WITH peaks AS (
+            SELECT account_id, MAX(peak_viewers) AS v FROM daily_stats
+            WHERE day >= ? GROUP BY account_id
+            UNION ALL
+            SELECT account_id, MAX(viewers) AS v FROM live_snapshots
+            WHERE captured_at >= ? GROUP BY account_id
+          ),
+          best AS (SELECT account_id, MAX(v) AS v FROM peaks GROUP BY account_id)
+          SELECT ${COLUMNS}, b.v AS value
+          FROM best b
+          JOIN accounts a ON a.id = b.account_id
           LEFT JOIN creators c ON c.id = a.creator_id
-          WHERE d.day >= ? AND ${JAPAN_FILTER}
-          GROUP BY a.id
+          WHERE ${JAPAN_FILTER}
           ORDER BY value DESC
           LIMIT ?`,
-    args: [since, limit * 2],
+    args: [sinceDay, since24h, limit * 2],
   });
   return toEntries(r.rows, limit);
 }

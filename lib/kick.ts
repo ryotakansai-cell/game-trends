@@ -5,6 +5,7 @@
 // 呼び出しの上限はヘッダーに出ていないので、表示のたびに呼ぶのは「いま配信中の一覧」の1回（5分作り置き）だけにして、
 // アイコンは毎時の収集のついでに DB（accounts.icon_url）へ残す（ツイキャスと同じ）。
 import type { PlatformAccount, PlatformContent } from "@/lib/platform-content";
+import { getGamesByNames, isRealGame } from "@/lib/twitch";
 
 const API = "https://api.kick.com";
 
@@ -193,4 +194,46 @@ export async function getKickContent(
       items: [],
     };
   });
+}
+
+// ============================================
+// ゲームランキング用（Kick でいま見られているゲーム）
+// ============================================
+
+export type KickGameRow = {
+  twitchGameId: string;
+  name: string;
+  boxArtUrl: string; // Twitch のパッケージ画像（{width}x{height} の形）
+  viewers: number;
+  streams: number;
+};
+
+/** Kick でいま見られているゲーム。配信中の上位100件をカテゴリごとに合計する（5分作り置きの1回分を使い回す）。
+ *  日本は日本語の上位100件（同接10人以上は全部入る）、Global は全世界の上位100件の合計（上位の配信に偏る）。
+ *  ゲームかどうかは Kick のカテゴリから確実に見分けられない（タグの付け方がはっきりしない）ので、
+ *  Twitch のゲームに名前で結び付き、Twitch 側でもゲームとして登録されているもの（IGDB の ID がある）だけにする。
+ *  日本の Kick は視聴者の約9割が Just Chatting と IRL で、これらは入らない */
+export async function getKickGameRanking(
+  japan: boolean,
+): Promise<KickGameRow[]> {
+  const streams = await getLivestreams(japan ? "ja" : undefined);
+  const games = await getGamesByNames(
+    streams.map((s) => s.category?.name ?? ""),
+  );
+  const byGame = new Map<string, KickGameRow>();
+  for (const s of streams) {
+    const g = games.get(s.category?.name ?? "");
+    if (!g || !isRealGame(g)) continue;
+    const row = byGame.get(g.id) ?? {
+      twitchGameId: g.id,
+      name: g.name,
+      boxArtUrl: g.box_art_url,
+      viewers: 0,
+      streams: 0,
+    };
+    row.viewers += s.viewer_count;
+    row.streams += 1;
+    byGame.set(g.id, row);
+  }
+  return [...byGame.values()].sort((a, b) => b.viewers - a.viewers);
 }
