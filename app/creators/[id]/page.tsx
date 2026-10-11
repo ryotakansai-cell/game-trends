@@ -8,8 +8,60 @@ import {
   getCreatorContents,
 } from "@/lib/creators";
 import { relationLabel } from "@/lib/platform";
-import type { ContentItem } from "@/lib/platform";
+import type { ContentItem, PlatformAccount } from "@/lib/platform";
 import { SegmentedTabs } from "@/components/SegmentedTabs";
+import { StreamStats } from "@/components/StreamStats";
+import { getAccountStats } from "@/lib/account-stats";
+import { getGamesByIds } from "@/lib/twitch";
+
+const PLATFORM_LABELS: Record<string, string> = {
+  twitch: "Twitch",
+  youtube: "YouTube",
+};
+
+/** 本人アカウントごとの配信の記録をまとめる。
+ *  切り抜き・アーカイブの同接は本人の数字ではないので含めない。
+ *  数字とグラフは、直近30日の配信時間が一番長いアカウントで出す */
+async function loadCreatorStats(accounts: PlatformAccount[]) {
+  const selfAccounts = accounts.filter((a) => a.relation === "self");
+  const rows = await Promise.all(
+    selfAccounts.map(async (account) => ({
+      account,
+      stats: await getAccountStats(account.id).catch(() => null),
+    })),
+  );
+
+  // 同じプラットフォームに本人アカウントが2つある人だけ、チャンネル名で見分ける
+  const platformCount = new Map<string, number>();
+  rows.forEach((r) =>
+    platformCount.set(
+      r.account.platform,
+      (platformCount.get(r.account.platform) ?? 0) + 1,
+    ),
+  );
+  const labelOf = (a: PlatformAccount) => {
+    const base = PLATFORM_LABELS[a.platform] ?? a.platform;
+    return (platformCount.get(a.platform) ?? 0) > 1
+      ? `${base}（${a.display_name}）`
+      : base;
+  };
+
+  const main =
+    rows
+      .filter((r) => r.stats !== null)
+      .sort((x, y) => y.stats!.hoursLive - x.stats!.hoursLive)[0] ?? null;
+
+  const games = await getGamesByIds(
+    main?.stats?.topGames.map((g) => g.gameId) ?? [],
+  ).catch(() => new Map());
+
+  return {
+    stats: main?.stats ?? null,
+    mainLabel: main ? labelOf(main.account) : undefined,
+    platforms: rows.map((r) => ({ label: labelOf(r.account), stats: r.stats })),
+    games,
+  };
+}
 
 // 1時間ごとに作り直す。YouTube APIの無料枠を使いすぎないため長めにしている
 export const revalidate = 3600;
@@ -35,8 +87,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const creator = await loadCreator(creatorId);
   if (!creator) return { title: "見つかりません" };
 
-  const title = `${creator.display_name}の配信まとめ`;
-  const description = `${creator.display_name}のTwitch・YouTubeのアカウントをまとめて表示。配信中かどうか、人気クリップ、最近の動画がわかります。`;
+  // 「〇〇 同接」「〇〇 配信時間」で調べた人に見つけてもらえるよう、タイトルに入れる
+  const title = `${creator.display_name}の同接・配信時間・配信まとめ`;
+  const description = `${creator.display_name}のTwitch・YouTubeをまとめて表示。直近30日の平均同接・最高同接・配信時間、プラットフォームごとの比較、人気クリップ、最近の動画がわかります。`;
 
   return {
     title,
@@ -155,7 +208,11 @@ export default async function CreatorPage({ params, searchParams }: Props) {
   if (!creator) notFound();
 
   const accounts = await getCreatorAccounts(creatorId);
-  const contents = await getCreatorContents(accounts);
+  // 動画・クリップ（各API）と配信の記録（DB）は独立しているので同時に取る
+  const [contents, statsData] = await Promise.all([
+    getCreatorContents(accounts),
+    loadCreatorStats(accounts),
+  ]);
 
   const sortByRecent = sort === "recent";
   const selectedKind: Kind = kind === "video" || kind === "clip" ? kind : "all";
@@ -270,6 +327,18 @@ export default async function CreatorPage({ params, searchParams }: Props) {
           </ul>
         </section>
       )}
+
+      {/* 配信の記録。2つ以上のプラットフォームで配信していれば比較表も出す */}
+      <StreamStats
+        stats={statsData.stats}
+        games={statsData.games}
+        platforms={statsData.platforms}
+        chartLabel={
+          statsData.platforms.filter((p) => p.stats).length >= 2
+            ? statsData.mainLabel
+            : undefined
+        }
+      />
 
       {/* 並び替えと種別のタブ。必ず縦に2段（inline-flexは横に並ぶため） */}
       <div className="mt-12 flex flex-col gap-2">

@@ -92,6 +92,20 @@ export async function rollupPendingDays() {
   return done;
 }
 
+/** 昨日の分の集計がまだ無いときだけ、まとめる（毎時の cron から呼ぶ保険）。
+ *  2026-10-11 朝、毎日の集計（cron/daily）が動かず、10/10 の分が欠けた。
+ *  手動で動かせば正常に終わったので、処理ではなく呼び出しの側の問題だった。
+ *  どちらが原因でも翌日以降の毎時の収集で追いつけるようにする。
+ *  昨日の分が既にあれば何もしない（毎時まとめ直すと、1日数千行の書き込みが24倍になる） */
+export async function rollupIfBehind() {
+  const db = getDbClient();
+  const yesterday = jstDay(new Date(Date.now() - 24 * 3600 * 1000));
+  const last = await db.execute("SELECT MAX(day) AS day FROM daily_stats");
+  const lastDay = last.rows[0]?.day ? String(last.rows[0].day) : "";
+  if (lastDay >= yesterday) return [];
+  return rollupPendingDays();
+}
+
 /** 古い記録を消す。必ず rollupPendingDays の後に呼ぶ（まとめる前に消すと統計が消える） */
 export async function deleteOldRecords() {
   const db = getDbClient();

@@ -236,6 +236,24 @@ export async function getGameById(gameId: string) {
   const games = await twitchFetch<TwitchGame>(`/games?id=${gameId}`);
   return games[0] ?? null;
 }
+
+/** 複数のゲームをまとめて取得する（1回100件まで）。
+ *  配信者の「よく遊ぶゲーム」は上位60のゲームに入らないことも多く、
+ *  DB の games 表に名前が無いので API から引く。ゲーム名はめったに変わらないので1日作り置きする */
+export async function getGamesByIds(ids: string[]) {
+  const map = new Map<string, TwitchGame>();
+  const unique = [...new Set(ids)].slice(0, 100);
+  if (unique.length === 0) return map;
+
+  const params = new URLSearchParams();
+  unique.forEach((id) => params.append("id", id));
+  const games = await twitchFetch<TwitchGame>(
+    `/games?${params.toString()}`,
+    86400,
+  );
+  games.forEach((g) => map.set(g.id, g));
+  return map;
+}
 export type TwitchUser = {
   id: string;
   login: string;

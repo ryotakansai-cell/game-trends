@@ -9,6 +9,7 @@ import {
   type TwitchStreamFull,
 } from "@/lib/twitch";
 import { getDbClient, batchInChunks } from "@/lib/db";
+import { rollupIfBehind } from "@/lib/daily-stats";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -162,7 +163,16 @@ export async function GET(request: NextRequest) {
       })),
     );
 
+    // ⑧ 毎朝の集計（cron/daily）が動かなかった日があっても、ここで追いつく。
+    // 昨日の分が既にあれば何もしない。集計に失敗しても収集の結果は保存済みなので、
+    // 収集そのものは失敗扱いにしない
+    const rolledUp = await rollupIfBehind().catch((e) => {
+      console.error("集計の追いつきに失敗", e);
+      return [];
+    });
+
     return NextResponse.json({
+      rolled_up: rolledUp,
       games: gameRows.length,
       snapshots: snapshotRows.length,
       streamers: allStreams.length,

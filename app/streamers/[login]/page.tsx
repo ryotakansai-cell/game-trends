@@ -8,14 +8,29 @@ import {
   getStreamByLogin,
   getClipsByBroadcaster,
   getVideosByUser,
+  getGamesByIds,
   streamThumb,
   videoThumb,
   elapsedSince,
   formatViewers,
   formatDate,
 } from "@/lib/twitch";
+import { getAccountId, getAccountStats } from "@/lib/account-stats";
+import { StreamStats } from "@/components/StreamStats";
 
 export const revalidate = 300;
+
+/** 配信の記録（DB）と、よく遊んだゲームの名前・画像（Twitch API）をまとめて取る。
+ *  記録が無い人（日本語以外で上位800に入らない人など）は null */
+async function loadStats(twitchUserId: string) {
+  const accountId = await getAccountId("twitch", twitchUserId);
+  if (accountId === null) return { stats: null, games: new Map() };
+  const stats = await getAccountStats(accountId);
+  const games = await getGamesByIds(
+    stats?.topGames.map((g) => g.gameId) ?? [],
+  ).catch(() => new Map());
+  return { stats, games };
+}
 
 type Props = {
   params: Promise<{ login: string }>;
@@ -30,8 +45,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const user = await loadUser(login);
   if (!user) return { title: "見つかりません" };
 
-  const title = `${user.display_name}のクリップ・アーカイブ`;
-  const description = `${user.display_name}（Twitch: ${user.login}）の人気クリップと過去の配信を一覧。配信中かどうかもわかります。`;
+  // 「〇〇 同接」「〇〇 配信時間」で調べた人に見つけてもらえるよう、タイトルに入れる
+  const title = `${user.display_name}の同接・配信時間・クリップ`;
+  const description = `${user.display_name}（Twitch: ${user.login}）の直近30日の平均同接・最高同接・配信時間、よく遊ぶゲーム、人気クリップと過去の配信。`;
 
   return {
     title,
@@ -47,10 +63,12 @@ export default async function StreamerPage({ params }: Props) {
   const user = await loadUser(login);
   if (!user) notFound();
 
-  const [stream, clips, videos] = await Promise.all([
+  const [stream, clips, videos, statsData] = await Promise.all([
     getStreamByLogin(login).catch(() => null),
     getClipsByBroadcaster(user.id, 7, 12).catch(() => []),
     getVideosByUser(user.id, 6).catch(() => []),
+    // DB が読めなくてもページ全体は出す（統計の欄が「記録なし」になるだけ）
+    loadStats(user.id).catch(() => ({ stats: null, games: new Map() })),
   ]);
 
   const q = encodeURIComponent(user.display_name);
@@ -164,6 +182,9 @@ export default async function StreamerPage({ params }: Props) {
           </div>
         </section>
       )}
+
+      {/* 配信の記録：検索で来た人が一番知りたい「どれくらい見られている人か」を先に見せる */}
+      <StreamStats stats={statsData.stats} games={statsData.games} />
 
       {/* クリップ */}
       <section className="mt-10">
