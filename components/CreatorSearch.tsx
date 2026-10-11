@@ -169,8 +169,10 @@ export function CreatorSearch({ defaultValue }: { defaultValue: string }) {
           aria-controls="creator-suggest"
           placeholder="配信者の名前で探す"
           aria-label="配信者の名前で探す"
-          // プルダウンが開いている間は下の角を四角にして、1枚につながって見えるようにする
-          className={`w-full border bg-white/5 px-4 py-2.5 text-sm text-gray-100 placeholder:text-gray-500 focus:border-purple-400 focus:outline-none ${
+          // プルダウンが開いている間は下の角を四角にして、1枚につながって見えるようにする。
+          // スマホは文字を16px（text-base）にする。iPhone の Safari は16px 未満の入力欄を押すと画面を拡大し、
+          // 検索した後も拡大が残って横にずれていた（2026-10-11）。拡大の禁止はせず（自分で拡大したい人が困るため）、文字の大きさで防ぐ
+          className={`w-full border bg-white/5 px-4 py-2.5 text-base text-gray-100 sm:text-sm placeholder:text-gray-500 focus:border-purple-400 focus:outline-none ${
             show
               ? "rounded-t-lg border-purple-400 bg-[#141414]"
               : "rounded-lg border-white/10"
