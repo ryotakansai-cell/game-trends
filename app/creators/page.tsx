@@ -11,13 +11,17 @@ import {
   type ListSort,
 } from "@/lib/streamer-list";
 import { formatViewers } from "@/lib/twitch";
-import { PLATFORM_IDS, accountHref, accountKey } from "@/lib/platforms";
+import {
+  PLATFORM_IDS,
+  accountHref,
+  accountKey,
+  PLATFORM_NAMES,
+} from "@/lib/platforms";
 import { getAccountIcons } from "@/lib/platform-loaders";
 
 export const metadata: Metadata = {
   title: "配信者一覧・検索",
-  description:
-    "Twitch・YouTubeの日本の配信者を、配信中・直近7日の最高同接・配信時間で並べた一覧。名前で検索して、同接や配信時間の記録を見られます。",
+  description: `${PLATFORM_NAMES}の日本の配信者を、配信中・直近7日の最高同接・配信時間で並べた一覧。名前で検索して、同接や配信時間の記録を見られます。`,
   alternates: { canonical: "/creators" },
 };
 
@@ -61,7 +65,7 @@ export default async function CreatorsPage({ searchParams }: Props) {
         summary={
           query
             ? `「${query}」の検索結果 ・ ${entries.length}人`
-            : "Twitch・YouTubeの日本の配信者"
+            : `${PLATFORM_NAMES}の日本の配信者`
         }
         filters={
           query ? undefined : (

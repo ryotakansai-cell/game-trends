@@ -14,7 +14,7 @@
 import { getDbClient } from "@/lib/db";
 import { dayTitle, getDailyHeadline } from "@/lib/daily";
 import { formatViewers } from "@/lib/twitch";
-import { PLATFORM_IDS, PLATFORMS } from "@/lib/platforms";
+import { PLATFORM_IDS, PLATFORMS, PLATFORM_NAMES } from "@/lib/platforms";
 import { LOADERS } from "@/lib/platform-loaders";
 import { SITE_URL } from "@/lib/site";
 import { jstDay } from "@/lib/snapshot-range";
@@ -290,7 +290,7 @@ export async function postLiveRanking(
     {
       uri: SITE_URL,
       title: "ライブ配信ランキング",
-      description: "Twitch・YouTubeを横断して、いま見られている配信",
+      description: `${PLATFORM_NAMES}を横断して、いま見られている配信`,
       image: `${SITE_URL}/opengraph-image`,
     },
     preview,

@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
+import { PLATFORM_NAMES } from "@/lib/platforms";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -22,11 +23,10 @@ export const metadata: Metadata = {
   // title.template は「各ページのタイトル | サイト名」を自動で組み立てる指定。
   // 各ページが title だけ返せばよくなる
   title: {
-    default: `${SITE_NAME} | Twitch・YouTubeのライブ配信ランキング`,
+    default: `${SITE_NAME} | ${PLATFORM_NAMES}のライブ配信ランキング`,
     template: `%s | ${SITE_NAME}`,
   },
-  description:
-    "TwitchとYouTube Liveの配信を横断して、いま盛り上がっている配信・ゲーム・急上昇中の配信者がわかるサイト。",
+  description: `${PLATFORM_NAMES}の配信を横断して、いま盛り上がっている配信・ゲーム・急上昇中の配信者がわかるサイト。`,
   openGraph: {
     siteName: SITE_NAME,
     locale: "ja_JP",

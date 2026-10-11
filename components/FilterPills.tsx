@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ScrollRow } from "@/components/ScrollRow";
 
 type Option = {
   label: string;
@@ -14,12 +15,13 @@ type Option = {
  * 窮屈になるので、こちらは別々のボタンにしている。
  * スマホでは1行に収めて横にスクロールさせる（画面上部に固定するので、
  * 折り返して2行になると画面を占める割合が増えて見づらくなるため）。
+ * 収まらないときは右端がうっすら暗くなり、横に送れることが分かる（ScrollRow）。
  * 選択中は紫（サイト全体で「選んでいるもの」は紫に統一）。
  */
 export function FilterPills({ options }: { options: Option[] }) {
   return (
     // スクロールバーは隠す（細い1行のバーに出ると、それだけで邪魔に見えるため）
-    <div className="flex min-w-0 gap-1 overflow-x-auto [scrollbar-width:none] sm:flex-wrap sm:gap-2 [&::-webkit-scrollbar]:hidden">
+    <ScrollRow className="flex min-w-0 gap-1 overflow-x-auto [scrollbar-width:none] sm:flex-wrap sm:gap-2 [&::-webkit-scrollbar]:hidden">
       {options.map((o) => (
         <Link
           key={o.href}
@@ -35,6 +37,6 @@ export function FilterPills({ options }: { options: Option[] }) {
           {o.label}
         </Link>
       ))}
-    </div>
+    </ScrollRow>
   );
 }

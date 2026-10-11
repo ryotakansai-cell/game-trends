@@ -2,7 +2,7 @@
 
 # game-trends
 
-Twitch・YouTube Liveの配信ランキングサイト。将来的に他プラットフォームも統合予定。
+Twitch・YouTube Live・ツイキャスの配信ランキングサイト。将来的に他プラットフォームも統合予定。
 表示名は「配信トレンド」（`lib/site.ts` の `SITE_NAME`）。リポジトリ名は
 game-trends のままだが、中身は配信者・配信が主役でゲームは従なので表示名とURLを寄せた。
 
@@ -79,12 +79,14 @@ app/
 ├── games/[id]/page.tsx         ゲーム詳細（配信者一覧 + 外部リンク）
 ├── streamers/[login]/page.tsx  配信者ページ（Twitch単体。配信の記録・クリップ・アーカイブ）
 ├── youtube/[channelId]/page.tsx YouTube チャンネルのページ（名寄せしていない人。DB の記録だけで作る）
+├── twitcasting/[userId]/page.tsx ツイキャスの配信者のページ（同上。中身は components/AccountRecordPage.tsx で共通）
 └── api/
     ├── cron/snapshot/route.ts        Twitch: 毎時DBに保存（games/snapshots、accounts/live_snapshots）
     ├── cron/youtube-snapshot/route.ts YouTube: 毎時DBに保存（accounts/live_snapshots、監視リスト）
     ├── cron/daily/route.ts           毎日: 前日分を daily_stats にまとめ、90日より古い毎時の記録を消す
     ├── cron/bluesky/route.ts         Bluesky に投稿（?kind=daily / live。cron-worker が決まった時刻に呼ぶ）
     ├── cron/play-snapshot/route.ts   毎時: ゲームを遊んでいる人数（Steam・Roblox）を play_snapshots に記録
+    ├── cron/twitcasting-snapshot/route.ts ツイキャス: 毎時DBに保存（おすすめ上位100 + 名寄せ済みの人）
     └── cron/appstore/route.ts        App Store の順位表を受け取って保存（POST。GitHub Actions が RSS を送ってくる）
 components/
 ├── SiteHeader.tsx              全ページ共通のヘッダー（ホーム + 下線ナビ）
@@ -102,6 +104,7 @@ components/
 lib/
 ├── twitch.ts                   Twitch APIとの通信（唯一の窓口）
 ├── youtube.ts                  YouTube Data API v3との通信 + DBからのランキング読み取り
+├── twitcasting.ts              ツイキャス API v2 との通信（唯一の窓口。上限1分60回）
 ├── platforms.ts                配信元の台帳（名前・URL・サムネ・日本の判定など。API や DB を読まない）
 ├── platform-loaders.ts         配信元ごとの読み取りの振り分け（アイコン・統合ページの中身・ライブランキング）
 ├── platform-content.ts         統合ページの共通の型（PlatformContent など）。処理は書かない
@@ -124,6 +127,8 @@ scripts/
 ├── db-migrate.mjs              npm run db:migrate（2026-10 以降に足した表を作る。何度実行しても安全）
 ├── test-cron.mjs               ローカル/本番のcronエンドポイントを手軽に叩くテスト用スクリプト
 ├── links-probe.mjs             Twitchのloginをハンドル(@xxx)として引く（1人1ユニット）
+├── links-twitcasting.mjs       Twitchのloginをツイキャスの ID として引き、判定つきで一覧（1人1回・1.1秒間隔）
+├── name-match.mjs              名前の似ている度合い（links:review と links:twitcasting で共用）
 ├── suggest-links.mjs           名寄せ候補をYouTube検索で集める（1人100ユニット）
 ├── links-review.mjs            候補を根拠つきで判定して一覧（50件1ユニット）
 ├── links-confirm.mjs           候補を確定・却下して紐付ける
@@ -184,6 +189,13 @@ Twitch のアーカイブは Twitch 側で7〜60日で消えるので、リン�
 - YouTube：キーワード検索（新しい配信者を見つける入口）＋ 監視リスト（`youtube_watch`）の
   RSS。日本向けの検索で2日以上見つかり、30日以内に配信したチャンネルと、
   名寄せ済みの本人チャンネルが対象（2026-10 時点で約1,200）。新人も自動で入る
+- ツイキャス：「おすすめ」の上位100件（日本語）＋ 名寄せ済みの人を `current_live` で直接（毎時48分）。
+  2026-10-11 にカテゴリ72個を全部読んで比べたところ、同接30人以上の49件はすべておすすめに入っていた
+  （10人以上だと112件中79件）。API の上限が1分60回と小さいので、カテゴリを毎時全部読むことはしていない。
+  アイコンは表示のたびに API を呼ぶと上限に響くので、収集のついでに `accounts.icon_url` に残している
+  （アイコンを DB に持つのはツイキャスだけ）。サムネイルは鍵なしの URL（`/users/<id>/live/thumbnail`）。
+  ツイキャスの「カテゴリ」は配信者が選ぶ大まかな分類（約7割が「一般ゲーム」）で、どのゲームかが分からないので、
+  ゲームのランキングには入れていない
 
 毎時の書き込みは2,000行を超えるので、名前などが前回と同じならアカウントを上書きしない
 （UPSERT の末尾の `WHERE ... IS NOT excluded...`）。Turso の書き込み枠は月1,000万行。
@@ -368,6 +380,8 @@ TWITCH_CLIENT_SECRET
 TURSO_DATABASE_URL
 TURSO_AUTH_TOKEN
 YOUTUBE_API_KEY
+TWITCASTING_CLIENT_ID      ツイキャスのアプリ（https://twitcasting.tv/developer.php。Read only）
+TWITCASTING_CLIENT_SECRET
 BLUESKY_HANDLE         Bluesky のボット（stream-trends.bsky.social）。Worker の Secret のみ
 BLUESKY_APP_PASSWORD   ボット用のアプリパスワード（本パスワードではない）。Worker の Secret のみ
 CRON_SECRET
@@ -420,6 +434,8 @@ Vercel は GitHub と連携したままなので push すると動くが、ア�
 5. npm run links:undo -- 4                      確定を取り消す
 6. npm run links:add -- <login> <YouTubeのURL>  検索で出ない人を手動登録
 7. npm run links:rename -- <creator_id> <名前>  creatorの表示名を直す
+8. npm run links:twitcasting -- 50              ツイキャスの候補（Twitch の login と同じ ID）を集めて判定
+                                                 確定は links:confirm（YouTube と共通）
 ```
 
 ### 安い手段から順に試す
@@ -493,7 +509,7 @@ probeの結果がある人でも検索は妨げないようにするため。
 ## 今後の予定
 
 1. ~~前日比・急上昇の実装~~ 実装済み（`/trending`）
-2. ツイキャス統合（公式APIあり、Twitchと近い形で取得できる見込み）← 次の本命
+2. ~~ツイキャス統合~~ 2026-10-11 に実装（収集・ライブ・急上昇・配信者ページ・名寄せ）
 3. Kick統合は保留（迷惑系配信者の存在が気になり、優先度を下げた）
 4. ~~`platform` 列によるスキーマ統合~~ 実装済み
    （プラットフォーム横断の総合ランキングは `app/page.tsx` で実現済み）

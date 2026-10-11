@@ -25,10 +25,20 @@ export const YouTubeIcon = () => (
   </svg>
 );
 
+/** ツイキャス：電波を出す丸（公式ロゴではなく「生配信」を表す形にした） */
+export const TwitcastingIcon = () => (
+  <svg {...props} fill="none" stroke="currentColor" strokeWidth={2.2}>
+    <circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none" />
+    <path d="M7.8 7.8a6 6 0 0 0 0 8.4M16.2 7.8a6 6 0 0 1 0 8.4" />
+    <path d="M4.6 4.6a10.5 10.5 0 0 0 0 14.8M19.4 4.6a10.5 10.5 0 0 1 0 14.8" />
+  </svg>
+);
+
 /** 配信元 → アイコン。配信元を足したら、ここにも1行足す（足し忘れると型チェックで止まる） */
 const ICONS: Record<PlatformId, () => React.JSX.Element> = {
   twitch: TwitchIcon,
   youtube: YouTubeIcon,
+  twitcasting: TwitcastingIcon,
 };
 
 export function PlatformIcon({ platform }: { platform: PlatformId }) {

@@ -9,7 +9,7 @@
 // サーバーで読む処理の振り分けは lib/platform-loaders.ts に置く。
 
 /** 扱っている配信元。並び順はボタンなどに出す順番 */
-export const PLATFORM_IDS = ["twitch", "youtube"] as const;
+export const PLATFORM_IDS = ["twitch", "youtube", "twitcasting"] as const;
 export type PlatformId = (typeof PLATFORM_IDS)[number];
 
 export function isPlatformId(v: unknown): v is PlatformId {
@@ -26,7 +26,7 @@ export function toPlatformId(v: unknown): PlatformId {
 export type AccountRef = {
   platform: PlatformId;
   platformId: string;
-  login: string | null; // URL 用の名前。YouTube には無い
+  login: string | null; // URL 用の名前（ツイキャスは screen_id）。YouTube には無い
 };
 
 type PlatformInfo = {
@@ -37,6 +37,11 @@ type PlatformInfo = {
   liveUrl: (a: AccountRef, contentId: string | null) => string;
   /** 配信中のサムネイル。URL の規則で組み立てられないものは null */
   liveThumbnail: (a: AccountRef, contentId: string | null) => string | null;
+  /** そのアカウントのページ（外部） */
+  profileUrl: (a: AccountRef) => string;
+  /** 終わった配信（記録に残っている content_id）を見るリンクとサムネイル。無い配信元は null */
+  pastStreamUrl: (a: AccountRef, contentId: string) => string | null;
+  pastThumbnail: (a: AccountRef, contentId: string) => string | null;
   /** 日本の配信とみなす条件（SQL。accounts を a、live_snapshots を l と書く）。
    *  急上昇の「日本」タブで使う */
   japanLiveSql: string;
@@ -63,6 +68,10 @@ export const PLATFORMS: Record<PlatformId, PlatformInfo> = {
       a.login
         ? `https://static-cdn.jtvnw.net/previews-ttv/live_user_${a.login}-440x248.jpg`
         : null,
+    profileUrl: (a) => `https://twitch.tv/${a.login}`,
+    // Twitch の毎時の記録には配信のIDを残していない（アーカイブは Twitch 側で7〜60日で消えるため）
+    pastStreamUrl: () => null,
+    pastThumbnail: () => null,
     japanLiveSql: "a.language = 'ja'",
     japanAccountSql: "a.language = 'ja'",
     liveUpdate: "5分ごと",
@@ -80,6 +89,11 @@ export const PLATFORMS: Record<PlatformId, PlatformInfo> = {
         : `https://www.youtube.com/channel/${a.platformId}`,
     liveThumbnail: (_a, contentId) =>
       contentId ? `https://i.ytimg.com/vi/${contentId}/hqdefault.jpg` : null,
+    profileUrl: (a) => `https://www.youtube.com/channel/${a.platformId}`,
+    pastStreamUrl: (_a, contentId) =>
+      `https://www.youtube.com/watch?v=${contentId}`,
+    pastThumbnail: (_a, contentId) =>
+      `https://i.ytimg.com/vi/${contentId}/hqdefault.jpg`,
     // YouTube は言語を持たないので、日本向けの検索・監視リストで見つかった記録（region='jp'）で見る
     japanLiveSql: "l.region = 'jp'",
     japanAccountSql: "a.id IN (SELECT account_id FROM youtube_watch)",
@@ -89,6 +103,28 @@ export const PLATFORMS: Record<PlatformId, PlatformInfo> = {
     rising: { windowHours: 6, minViewers: 50 },
     badgeClass: "bg-red-700/90",
     sitemapAccounts: 200,
+  },
+  twitcasting: {
+    label: "ツイキャス",
+    // URL には screen_id ではなく数字のユーザーIDを使う（screen_id は本人が変えられるため）
+    accountPath: (a) => `/twitcasting/${a.platformId}`,
+    liveUrl: (a) => `https://twitcasting.tv/${a.login ?? a.platformId}`,
+    // 鍵なしで読めるサムネイル（lib/twitcasting.ts の liveThumbnail と同じ）
+    liveThumbnail: (a) =>
+      `https://apiv2.twitcasting.tv/users/${a.platformId}/live/thumbnail?size=large&position=latest`,
+    profileUrl: (a) => `https://twitcasting.tv/${a.login ?? a.platformId}`,
+    pastStreamUrl: (a, contentId) =>
+      `https://twitcasting.tv/${a.login ?? a.platformId}/movie/${contentId}`,
+    // 終わった配信のサムネイルは鍵なしの URL が無い（API を呼ぶと上限に響く）ので出さない
+    pastThumbnail: () => null,
+    // 日本語の配信だけを集めている（収集のときに language='ja' で保存する）
+    japanLiveSql: "a.language = 'ja'",
+    japanAccountSql: "a.language = 'ja'",
+    liveUpdate: "5分ごと",
+    // 視聴者の数が Twitch より一桁小さいので、最低ラインも下げる
+    rising: { windowHours: 3, minViewers: 30 },
+    badgeClass: "bg-sky-700/90",
+    sitemapAccounts: 100,
   },
 };
 
@@ -102,3 +138,8 @@ export function accountHref(a: AccountRef & { creatorId: number | null }) {
 export function accountKey(a: { platform: string; platformId: string }) {
   return `${a.platform}:${a.platformId}`;
 }
+
+/** 説明文などに出す配信元の並び（"Twitch・YouTube・ツイキャス"）。配信元を足すと自動で増える */
+export const PLATFORM_NAMES = PLATFORM_IDS.map((p) => PLATFORMS[p].label).join(
+  "・",
+);

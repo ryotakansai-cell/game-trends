@@ -20,6 +20,8 @@ const JOBS: Record<string, string> = {
   "0 3,9,12 * * *": "/api/cron/bluesky?kind=live",
   // 毎時：ゲームを遊んでいる人数（Steam・Roblox）
   "8 * * * *": "/api/cron/play-snapshot",
+  // 毎時：ツイキャスの配信中の記録
+  "48 * * * *": "/api/cron/twitcasting-snapshot",
 };
 
 export default {
@@ -37,7 +39,9 @@ export default {
     // 例外にすると Cloudflare のダッシュボードで「失敗」として記録される
     if (!res.ok) {
       const body = await res.text();
-      throw new Error(`${path} が失敗しました: ${res.status} ${body.slice(0, 200)}`);
+      throw new Error(
+        `${path} が失敗しました: ${res.status} ${body.slice(0, 200)}`,
+      );
     }
     console.log(`${path} 成功: ${res.status}`);
   },

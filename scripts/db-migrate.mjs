@@ -118,6 +118,18 @@ if (!titleColumns.includes("developer")) {
   console.log("play_titles に developer を足しました");
 }
 
+// 2026-10-11 追加：アカウントのアイコンの URL（今はツイキャスだけが使う）。
+// アイコンは表示のたびに API から取る方針だが、ツイキャスの API は1分60回までと小さく、
+// 一覧のページを開くたびに人数分呼ぶと毎時の収集の分まで足りなくなる。
+// 毎時の収集の返事にアイコンの URL が付いてくるので、そのついでに残す
+const accountColumns = (
+  await db.execute("PRAGMA table_info(accounts)")
+).rows.map((r) => r.name);
+if (!accountColumns.includes("icon_url")) {
+  await db.execute("ALTER TABLE accounts ADD COLUMN icon_url TEXT");
+  console.log("accounts に icon_url を足しました");
+}
+
 // 監視リストの初期値を、これまでの記録から作る（既に行があれば何もしない）
 const { rows } = await db.execute("SELECT COUNT(*) AS n FROM youtube_watch");
 if (Number(rows[0].n) === 0) {

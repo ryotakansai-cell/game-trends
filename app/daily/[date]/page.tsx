@@ -18,7 +18,7 @@ import {
   formatViewers,
   type TwitchGame,
 } from "@/lib/twitch";
-import { accountHref, accountKey } from "@/lib/platforms";
+import { accountHref, accountKey, PLATFORM_NAMES } from "@/lib/platforms";
 import { getAccountIcons } from "@/lib/platform-loaders";
 import { PageHeader } from "@/components/PageHeader";
 import { PlatformIcon } from "@/components/PlatformIcons";
@@ -45,8 +45,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const top = summary.topPeak[0];
   const title = `${dayTitle(date)}の配信ランキング`;
   const description = top
-    ? `${dayTitle(date)}に最も見られた配信者は${top.displayName}（最高同接${top.peakViewers.toLocaleString("ja-JP")}人）。Twitch・YouTubeの最高同接ランキング、前日から伸びた配信者、長時間配信、見られたゲーム。`
-    : `${dayTitle(date)}のTwitch・YouTubeの配信ランキング。`;
+    ? `${dayTitle(date)}に最も見られた配信者は${top.displayName}（最高同接${top.peakViewers.toLocaleString("ja-JP")}人）。${PLATFORM_NAMES}の最高同接ランキング、前日から伸びた配信者、長時間配信、見られたゲーム。`
+    : `${dayTitle(date)}の${PLATFORM_NAMES}の配信ランキング。`;
   return {
     title,
     description,
@@ -168,7 +168,7 @@ export default async function DailyPage({ params }: Props) {
         summary={
           <>
             日本の配信者{summary.streamers.toLocaleString("ja-JP")}
-            人の記録から（Twitch・YouTube）
+            人の記録から（{PLATFORM_NAMES}）
             <span className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-gray-500">
               {hasPrev && (
                 <Link

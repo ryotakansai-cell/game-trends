@@ -10,7 +10,7 @@ import {
 } from "@/lib/creators";
 import { relationLabel } from "@/lib/platform-content";
 import type { ContentItem, PlatformAccount } from "@/lib/platform-content";
-import { PLATFORMS } from "@/lib/platforms";
+import { PLATFORMS, PLATFORM_NAMES } from "@/lib/platforms";
 import { SegmentedTabs } from "@/components/SegmentedTabs";
 import { StreamStats } from "@/components/StreamStats";
 import { DayStreams } from "@/components/DayStreams";
@@ -19,11 +19,6 @@ import { loadStatsExtras, pickSelectedDay } from "@/lib/stats-extras";
 import { dayTitle } from "@/lib/daily";
 import { getAccountStats } from "@/lib/account-stats";
 import { getGamesByIds } from "@/lib/twitch";
-
-const PLATFORM_LABELS: Record<string, string> = {
-  twitch: "Twitch",
-  youtube: "YouTube",
-};
 
 /** 本人アカウントごとの配信の記録をまとめる。
  *  切り抜き・アーカイブの同接は本人の数字ではないので含めない。
@@ -46,7 +41,7 @@ async function loadCreatorStats(accounts: PlatformAccount[]) {
     ),
   );
   const labelOf = (a: PlatformAccount) => {
-    const base = PLATFORM_LABELS[a.platform] ?? a.platform;
+    const base = PLATFORMS[a.platform].label;
     return (platformCount.get(a.platform) ?? 0) > 1
       ? `${base}（${a.display_name}）`
       : base;
@@ -101,7 +96,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   // 「〇〇 同接」「〇〇 配信時間」で調べた人に見つけてもらえるよう、タイトルに入れる
   const title = `${creator.display_name}の同接・配信時間・配信まとめ`;
-  const description = `${creator.display_name}のTwitch・YouTubeをまとめて表示。直近30日の平均同接・最高同接・配信時間、プラットフォームごとの比較、人気クリップ、最近の動画がわかります。`;
+  const description = `${creator.display_name}の${PLATFORM_NAMES}をまとめて表示。直近30日の平均同接・最高同接・配信時間、プラットフォームごとの比較、人気クリップ、最近の動画がわかります。`;
 
   return {
     title,
