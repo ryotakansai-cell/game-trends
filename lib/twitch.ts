@@ -307,6 +307,34 @@ export async function getGamesByIds(ids: string[]) {
   games.forEach((g) => map.set(g.id, g));
   return map;
 }
+
+/** ゲームの名前から Twitch のゲームを引く（1回100件まで。1日作り置き）。
+ *  Kick のカテゴリ名を Twitch のゲームに結び付けるのに使う。
+ *  「Grand Theft Auto V (GTA)」のように括弧の補足が付いた名前は、括弧を外した名前でも探す。
+ *  返す Map の鍵は、渡された元の名前 */
+export async function getGamesByNames(names: string[]) {
+  const result = new Map<string, TwitchGame>();
+  const unique = [...new Set(names)].filter(Boolean);
+  if (unique.length === 0) return result;
+  const stripped = (n: string) => n.replace(/s*([^)]*)s*$/, "").trim();
+  const queries = [...new Set(unique.flatMap((n) => [n, stripped(n)]))];
+  const byName = new Map<string, TwitchGame>();
+  for (let i = 0; i < queries.length; i += 100) {
+    const params = new URLSearchParams();
+    queries.slice(i, i + 100).forEach((n) => params.append("name", n));
+    const games = await twitchFetch<TwitchGame>(
+      `/games?${params.toString()}`,
+      86400,
+    );
+    games.forEach((g) => byName.set(g.name.toLowerCase(), g));
+  }
+  for (const n of unique) {
+    const g =
+      byName.get(n.toLowerCase()) ?? byName.get(stripped(n).toLowerCase());
+    if (g) result.set(n, g);
+  }
+  return result;
+}
 export type TwitchUser = {
   id: string;
   login: string;

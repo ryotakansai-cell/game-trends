@@ -9,8 +9,7 @@ type Suggestion = { n: string; l: string | null; h: string; p: string[] };
 
 /** プルダウンに並べる1行。打っている間は予測、空のときは最近の検索 */
 type Item =
-  | { kind: "suggest"; s: Suggestion }
-  | { kind: "recent"; text: string };
+  { kind: "suggest"; s: Suggestion } | { kind: "recent"; text: string };
 
 const RECENT_KEY = "creator-search-recent";
 const RECENT_MAX = 8;

@@ -14,6 +14,8 @@ import {
   getTwitchContent,
   streamThumb,
   elapsedSince,
+  getGamesByNames,
+  type TwitchStreamFull,
 } from "@/lib/twitch";
 import {
   getTopYouTubeLive,
@@ -26,6 +28,11 @@ import {
   toHttps,
 } from "@/lib/twitcasting";
 import { getDbClient } from "@/lib/db";
+import {
+  getLivestreams,
+  getKickContent,
+  elapsedSince as kickElapsed,
+} from "@/lib/kick";
 
 /** ライブランキングの1件。配信元が違っても同じ形にそろえる */
 export type LiveEntry = AccountRef & {
@@ -41,6 +48,40 @@ export type LiveEntry = AccountRef & {
   elapsed?: string; // 配信開始からの経過時間
   capturedAt?: string; // DB の毎時の記録から作ったものは、その収集時刻
 };
+
+/** 毎時の収集で accounts.icon_url に残したアイコンを読む（ツイキャス・Kick）。
+ *  API の上限が小さい・はっきりしない配信元は、表示のたびに API を呼ばずにこちらを使う */
+async function iconsFromDb(platform: PlatformId, accounts: AccountRef[]) {
+  if (accounts.length === 0) return new Map<string, string>();
+  const ids = [...new Set(accounts.map((a) => a.platformId))];
+  const r = await getDbClient().execute({
+    sql: `SELECT platform_id, icon_url FROM accounts
+          WHERE platform = ? AND icon_url IS NOT NULL
+            AND platform_id IN (${ids.map(() => "?").join(",")})`,
+    args: [platform, ...ids],
+  });
+  return new Map(
+    r.rows.map((row) => [String(row.platform_id), String(row.icon_url)]),
+  );
+}
+
+/** Twitch の配信を共通の形にする（ゲームの詳細ページでも使う） */
+export function twitchEntry(s: TwitchStreamFull): LiveEntry {
+  return {
+    platform: "twitch",
+    platformId: s.user_id,
+    login: s.user_login,
+    key: `twitch-${s.id}`,
+    title: s.title,
+    viewers: s.viewer_count,
+    thumbnailUrl: streamThumb(s.thumbnail_url),
+    watchHref: `https://twitch.tv/${s.user_login}`,
+    channelName: s.user_name,
+    gameName: s.game_name || undefined,
+    gameId: s.game_id || undefined,
+    elapsed: elapsedSince(s.started_at),
+  };
+}
 
 type Loader = {
   /** アイコンの URL（platformId → URL）。表示のたびに取り、DB には保存しない */
@@ -68,20 +109,7 @@ export const LOADERS: Record<PlatformId, Loader> = {
         language: japan ? "ja" : undefined,
         limit,
       });
-      return streams.map((s) => ({
-        platform: "twitch" as const,
-        platformId: s.user_id,
-        login: s.user_login,
-        key: `twitch-${s.id}`,
-        title: s.title,
-        viewers: s.viewer_count,
-        thumbnailUrl: streamThumb(s.thumbnail_url),
-        watchHref: `https://twitch.tv/${s.user_login}`,
-        channelName: s.user_name,
-        gameName: s.game_name || undefined,
-        gameId: s.game_id || undefined,
-        elapsed: elapsedSince(s.started_at),
-      }));
+      return streams.map(twitchEntry);
     },
   },
   youtube: {
@@ -111,19 +139,7 @@ export const LOADERS: Record<PlatformId, Loader> = {
   },
   twitcasting: {
     // API の上限（1分60回）が小さいので、毎時の収集で残した URL を DB から読む（lib/twitcasting.ts の冒頭）
-    icons: async (accounts) => {
-      if (accounts.length === 0) return new Map();
-      const ids = [...new Set(accounts.map((a) => a.platformId))];
-      const r = await getDbClient().execute({
-        sql: `SELECT platform_id, icon_url FROM accounts
-              WHERE platform = 'twitcasting' AND icon_url IS NOT NULL
-                AND platform_id IN (${ids.map(() => "?").join(",")})`,
-        args: ids,
-      });
-      return new Map(
-        r.rows.map((row) => [String(row.platform_id), String(row.icon_url)]),
-      );
-    },
+    icons: (accounts) => iconsFromDb("twitcasting", accounts),
     contents: getTwitcastingContent,
     // 「おすすめ」の上位100件を1回だけ読む（5分作り置き）。日本語の配信だけなので、日本/Global で同じ
     live: async (_japan, limit) => {
@@ -144,6 +160,37 @@ export const LOADERS: Record<PlatformId, Loader> = {
           iconUrl: toHttps(broadcaster.image),
           elapsed: elapsedSince(new Date(movie.created * 1000).toISOString()),
         }));
+    },
+  },
+  kick: {
+    icons: (accounts) => iconsFromDb("kick", accounts),
+    contents: getKickContent,
+    // 上位100件を1回だけ読む（5分作り置き）。日本は日本語の配信、Global は全部
+    live: async (japan, limit) => {
+      const streams = (await getLivestreams(japan ? "ja" : undefined)).slice(
+        0,
+        limit,
+      );
+      // カテゴリ名を Twitch のゲームに結び付け、ゲームのページへのリンクにする（1日作り置き）
+      const games = await getGamesByNames(
+        streams.map((s) => s.category?.name ?? ""),
+      ).catch(() => new Map());
+      return streams.map((s) => ({
+        platform: "kick" as const,
+        platformId: String(s.broadcaster_user_id),
+        login: s.slug,
+        key: `kick-${s.broadcaster_user_id}`,
+        title: s.stream_title,
+        viewers: s.viewer_count,
+        thumbnailUrl: s.thumbnail,
+        watchHref: `https://kick.com/${s.slug}`,
+        // Kick には表示名が無い（ユーザー名だけ）。一覧では slug をそのまま名前として出す
+        channelName: s.slug,
+        iconUrl: s.profile_picture ?? undefined,
+        gameName: s.category?.name,
+        gameId: games.get(s.category?.name ?? "")?.id,
+        elapsed: kickElapsed(s.started_at),
+      }));
     },
   },
 };

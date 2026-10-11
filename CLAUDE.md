@@ -2,7 +2,7 @@
 
 # game-trends
 
-Twitch・YouTube Live・ツイキャスの配信ランキングサイト。将来的に他プラットフォームも統合予定。
+Twitch・YouTube Live・ツイキャス・Kick の配信ランキングサイト。将来的に他プラットフォームも統合予定。
 表示名は「配信トレンド」（`lib/site.ts` の `SITE_NAME`）。リポジトリ名は
 game-trends のままだが、中身は配信者・配信が主役でゲームは従なので表示名とURLを寄せた。
 
@@ -81,6 +81,7 @@ app/
 ├── streamers/[login]/page.tsx  配信者ページ（Twitch単体。配信の記録・クリップ・アーカイブ）
 ├── youtube/[channelId]/page.tsx YouTube チャンネルのページ（名寄せしていない人。DB の記録だけで作る）
 ├── twitcasting/[userId]/page.tsx ツイキャスの配信者のページ（同上。中身は components/AccountRecordPage.tsx で共通）
+├── kick/[userId]/page.tsx      Kick の配信者のページ（同上）
 └── api/
     ├── cron/snapshot/route.ts        Twitch: 毎時DBに保存（games/snapshots、accounts/live_snapshots）
     ├── cron/youtube-snapshot/route.ts YouTube: 毎時DBに保存（accounts/live_snapshots、監視リスト）
@@ -88,6 +89,7 @@ app/
     ├── cron/bluesky/route.ts         Bluesky に投稿（?kind=daily / live。cron-worker が決まった時刻に呼ぶ）
     ├── cron/play-snapshot/route.ts   毎時: ゲームを遊んでいる人数（Steam・Roblox）を play_snapshots に記録
     ├── cron/twitcasting-snapshot/route.ts ツイキャス: 毎時DBに保存（おすすめ上位100 + 名寄せ済みの人）
+    ├── cron/kick-snapshot/route.ts   Kick: 毎時DBに保存（日本語の上位100 + 全世界の上位100 + 名寄せ済みの人）
     └── cron/appstore/route.ts        App Store の順位表を受け取って保存（POST。GitHub Actions が RSS を送ってくる）
 components/
 ├── SiteHeader.tsx              全ページ共通のヘッダー（ホーム + 下線ナビ）
@@ -110,6 +112,7 @@ lib/
 ├── twitch.ts                   Twitch APIとの通信（唯一の窓口）
 ├── youtube.ts                  YouTube Data API v3との通信 + DBからのランキング読み取り
 ├── twitcasting.ts              ツイキャス API v2 との通信（唯一の窓口。上限1分60回）
+├── kick.ts                     Kick の公開 API との通信（唯一の窓口）
 ├── platforms.ts                配信元の台帳（名前・URL・サムネ・日本の判定など。API や DB を読まない）
 ├── platform-loaders.ts         配信元ごとの読み取りの振り分け（アイコン・統合ページの中身・ライブランキング）
 ├── platform-content.ts         統合ページの共通の型（PlatformContent など）。処理は書かない
@@ -133,6 +136,7 @@ scripts/
 ├── db-migrate.mjs              npm run db:migrate（2026-10 以降に足した表を作る。何度実行しても安全）
 ├── test-cron.mjs               ローカル/本番のcronエンドポイントを手軽に叩くテスト用スクリプト
 ├── links-probe.mjs             Twitchのloginをハンドル(@xxx)として引く（1人1ユニット）
+├── links-kick.mjs              Kick の候補（Twitch の login・ツイキャスの ID と同じ名前）を集め、Kick で配信しているかで判定
 ├── links-twitcasting.mjs       Twitchのloginをツイキャスの ID として引き、判定つきで一覧（1人1回・1.1秒間隔）
 ├── name-match.mjs              名前の似ている度合い（links:review と links:twitcasting で共用）
 ├── suggest-links.mjs           名寄せ候補をYouTube検索で集める（1人100ユニット）
@@ -202,6 +206,14 @@ Twitch のアーカイブは Twitch 側で7〜60日で消えるので、リン�
   （アイコンを DB に持つのはツイキャスだけ）。サムネイルは鍵なしの URL（`/users/<id>/live/thumbnail`）。
   ツイキャスの「カテゴリ」は配信者が選ぶ大まかな分類（約7割が「一般ゲーム」）で、どのゲームかが分からないので、
   ゲームのランキングには入れていない
+- Kick：日本語の上位100件（視聴者順なので同接10人以上は全部入る。2026-10-11 の実測で10人以上58件・最高1.1万人）
+  ＋ 全世界の上位100件 ＋ 名寄せ済みの人を `channels` で直接（毎時13分）。**除外・フィルターはかけない**（オーナーの決定。
+  除外の理由づけが難しく、そのままのランキングの方が価値があるため）。Kick には日本語の表示名が無く、名前は英数字のユーザー名。
+  カテゴリ名を Twitch のゲームに名前で結び付けて `game_id` に入れる（`getGamesByNames`。括弧の補足を外しても探す。
+  2026-10-11 の実測で視聴者の92%が結べた）。日本の Kick は視聴者の約9割が Just Chatting と IRL（ゲームではない）。
+  サムネイルの URL の一部（配信ごとのID）を `content_id` に残し、急上昇などであとから同じサムネイルを出す。
+  ゲームの詳細ページは Twitch と Kick の配信を混ぜて並べる（Kick の一覧は5分作り置きの1回分を使い回す）。
+  名寄せは、Twitch の上位とは別の人たちが多い（同じ名前の Kick を持つ名寄せ済みの38人は、Kick で配信していなかった）
 
 毎時の書き込みは2,000行を超えるので、名前などが前回と同じならアカウントを上書きしない
 （UPSERT の末尾の `WHERE ... IS NOT excluded...`）。Turso の書き込み枠は月1,000万行。
@@ -407,6 +419,8 @@ TURSO_AUTH_TOKEN
 YOUTUBE_API_KEY
 TWITCASTING_CLIENT_ID      ツイキャスのアプリ（https://twitcasting.tv/developer.php。Read only）
 TWITCASTING_CLIENT_SECRET
+KICK_CLIENT_ID             Kick のアプリ（https://kick.com/settings/developer。アプリ名は英数字のみ・2段階認証が必要）
+KICK_CLIENT_SECRET
 BLUESKY_HANDLE         Bluesky のボット（stream-trends.bsky.social）。Worker の Secret のみ
 BLUESKY_APP_PASSWORD   ボット用のアプリパスワード（本パスワードではない）。Worker の Secret のみ
 CRON_SECRET
@@ -460,6 +474,7 @@ Vercel は GitHub と連携したままなので push すると動くが、ア�
 6. npm run links:add -- <login> <YouTubeのURL>  検索で出ない人を手動登録
 7. npm run links:rename -- <creator_id> <名前>  creatorの表示名を直す
 8. npm run links:twitcasting -- 50              ツイキャスの候補（Twitch の login と同じ ID）を集めて判定
+9. npm run links:kick                            Kick の候補（Twitch の login・ツイキャスの ID と同じ名前）を集めて判定
                                                  確定は links:confirm（YouTube と共通）
 ```
 
