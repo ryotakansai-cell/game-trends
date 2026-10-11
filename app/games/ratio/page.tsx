@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/PageHeader";
@@ -54,6 +55,20 @@ export default async function WatchRatioPage() {
             <span className="w-6 shrink-0 text-right text-sm tabular-nums text-gray-400">
               {i + 1}
             </span>
+            {/* 画像は Steam の一覧と同じもの（ゲームのマスタに保存してあり、毎日取り直す） */}
+            <div className="relative flex h-[46px] w-[123px] shrink-0 items-center justify-center overflow-hidden rounded bg-white/5 text-lg font-bold text-gray-500">
+              {g.imageUrl ? (
+                <Image
+                  src={g.imageUrl}
+                  alt={g.name}
+                  fill
+                  className="object-cover"
+                  unoptimized
+                />
+              ) : (
+                [...g.name][0]
+              )}
+            </div>
             <div className="min-w-0 flex-1">
               <Link
                 href={`/games/${g.twitchGameId}`}
