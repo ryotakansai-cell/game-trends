@@ -15,9 +15,11 @@ const JOBS: Record<string, string> = {
   "38 * * * *": "/api/cron/youtube-snapshot",
   // 1日1回：前日の毎時の記録を日ごとの集計にまとめ、90日より古い記録を消す
   "53 20 * * *": "/api/cron/daily",
-  // Bluesky への投稿（日本時間8時：前日のまとめ、9・12・18・21時：いま見られている配信）
+  // Bluesky への投稿（日本時間8時：前日のまとめ、12・18・21時：いま見られている配信）
   "0 23 * * *": "/api/cron/bluesky?kind=daily",
-  "0 0,3,9,12 * * *": "/api/cron/bluesky?kind=live",
+  "0 3,9,12 * * *": "/api/cron/bluesky?kind=live",
+  // 毎時：ゲームを遊んでいる人数（Steam・Roblox）
+  "8 * * * *": "/api/cron/play-snapshot",
 };
 
 export default {

@@ -146,6 +146,21 @@ export async function getViewersForGames(gameIds: string[]) {
   return new Map(ids.map((id, i) => [id, sums[i]]));
 }
 
+/** ゲームごとに、日本語の配信が今いくつあるか（100まで）。
+ *  以前は DB の毎時の記録から数えていたが、記録は10人以上の配信だけなので、
+ *  ゲームのページ（全部の日本語配信を出す）より少なく出ていた（2026-10-11 に指摘を受けて直した） */
+export async function getJapaneseStreamCountsForGames(gameIds: string[]) {
+  const ids = [...new Set(gameIds)];
+  const counts = await Promise.all(
+    ids.map((id) =>
+      helixPage<TwitchStream>(`/streams?game_id=${id}&language=ja&first=100`)
+        .then((p) => p.data.length)
+        .catch(() => 0),
+    ),
+  );
+  return new Map(ids.map((id, i) => [id, counts[i]]));
+}
+
 export type TwitchStream = {
   id: string;
   user_name: string;

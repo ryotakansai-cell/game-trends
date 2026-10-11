@@ -49,6 +49,24 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.8,
     },
     {
+      url: `${SITE_URL}/games/roblox`,
+      lastModified: now,
+      changeFrequency: "hourly",
+      priority: 0.7,
+    },
+    {
+      url: `${SITE_URL}/games/appstore`,
+      lastModified: now,
+      changeFrequency: "hourly",
+      priority: 0.7,
+    },
+    {
+      url: `${SITE_URL}/games/ratio`,
+      lastModified: now,
+      changeFrequency: "hourly",
+      priority: 0.7,
+    },
+    {
       url: `${SITE_URL}/creators`,
       lastModified: now,
       changeFrequency: "daily",

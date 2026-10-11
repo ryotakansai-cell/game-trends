@@ -71,7 +71,10 @@ app/
 ├── creators/page.tsx           配信者一覧・検索（日本の配信者全体。配信中 / 7日の最高同接 / 7日の配信時間で並べ替え）
 ├── creators/[id]/page.tsx      クリエイター統合ページ（全プラットフォームを1ページに）
 ├── games/page.tsx              ゲームランキング（Twitch で見られている順。YouTube側にゲーム判定が無いため）
-├── games/steam/page.tsx        ゲームランキング（Steam で遊ばれている順。Twitch の視聴者数・日本の配信数と並べる）
+├── games/steam/page.tsx        ゲームランキング（Steam で遊ばれている順。24時間前比・Twitch の視聴者数・日本の配信数）
+├── games/roblox/page.tsx       ゲームランキング（Roblox で遊ばれている順）
+├── games/appstore/page.tsx     ゲームランキング（App Store の日本のゲーム。セールス / 無料）
+├── games/ratio/page.tsx        見られ度（Twitch の視聴者 ÷ Steam で遊んでいる人）
 ├── games/[id]/page.tsx         ゲーム詳細（配信者一覧 + 外部リンク）
 ├── streamers/[login]/page.tsx  配信者ページ（Twitch単体。配信の記録・クリップ・アーカイブ）
 ├── youtube/[channelId]/page.tsx YouTube チャンネルのページ（名寄せしていない人。DB の記録だけで作る）
@@ -79,7 +82,8 @@ app/
     ├── cron/snapshot/route.ts        Twitch: 毎時DBに保存（games/snapshots、accounts/live_snapshots）
     ├── cron/youtube-snapshot/route.ts YouTube: 毎時DBに保存（accounts/live_snapshots、監視リスト）
     ├── cron/daily/route.ts           毎日: 前日分を daily_stats にまとめ、90日より古い毎時の記録を消す
-    └── cron/bluesky/route.ts         Bluesky に投稿（?kind=daily / live。cron-worker が決まった時刻に呼ぶ）
+    ├── cron/bluesky/route.ts         Bluesky に投稿（?kind=daily / live。cron-worker が決まった時刻に呼ぶ）
+    └── cron/play-snapshot/route.ts   毎時: ゲームを遊んでいる人数（Steam・Roblox）を play_snapshots に記録
 components/
 ├── SiteHeader.tsx              全ページ共通のヘッダー（ホーム + 下線ナビ）
 ├── PageHeader.tsx              各ページの見出し（紫の小さな英字 + 白い見出し + 右上に地域 + 下に絞り込み）
@@ -102,8 +106,11 @@ lib/
 ├── streamer-list.ts            配信者タブの一覧（並び替え）と検索
 ├── stats-extras.ts             配信者ページの追加情報（時間帯・同じゲームの人・選んだ日の配信）を3ページ共通で取る
 ├── og.tsx                      OGP 画像の共通部品（日本語フォントの取得・ロゴ・枠）
-├── steam.ts                    Steam の人数（鍵なしの公開 API）と、Twitch のゲームへの結び付け（IGDB 経由）
-├── bluesky.ts                  Bluesky への投稿（朝8時に前日のまとめ、9・12・18・21時にいま見られている配信）
+├── play.ts                     ゲームの人数の記録と読み取り（Steam・Roblox 共通。play_titles / play_snapshots）
+├── steam.ts                    Steam の人数の収集（鍵なしの公開 API）と、Twitch のゲームへの結び付け（IGDB 経由）
+├── roblox.ts                   Roblox の人数の収集（公式に案内されていない公開の窓口）
+├── appstore.ts                 App Store の日本のゲームのランキング（Apple 公式の RSS）
+├── bluesky.ts                  Bluesky への投稿（朝8時に前日のまとめ、12・18・21時にいま見られている配信）
 ├── account-stats.ts            アカウントの直近30日の統計（daily_stats と、ゲームは毎時の記録から）
 ├── snapshot-range.ts           live_snapshots を時刻の範囲で絞る部品、日本時間の日付
 └── db.ts                       Turso接続（読み書き共通の1関数）と、大量書き込みを500件ずつに分ける部品
@@ -257,6 +264,11 @@ Google Fonts から**画像に使う文字だけを切り出したフォント**
 日付ページは「日本の配信者」に絞る（Twitch は日本語、YouTube は監視リスト、名寄せ済み）。
 全世界の上位800配信も記録しているので、絞らないと英語圏の大物で埋まるため。
 
+ゲームを「遊んでいる人数」は、配信と同じく「マスタ（`play_titles`）＋毎時の記録（`play_snapshots`）」で持つ
+（Steam 上位100本・Roblox 上位約100本。毎時8分に `cron/play-snapshot`。90日で消す）。
+名前・画像・Twitch との対応はマスタに1日1回だけ更新し、ページは DB から読む。
+Steam の画像は昔の決まったURL（capsule_184x69.jpg）だと新しいゲームが404になるので、ストアの API が返すURLを使う。
+「日本で◯人が配信中」は Twitch API でゲームごとに数える（DB の毎時の記録は10人以上の配信だけで、ゲームのページより少なく出ていた）。
 Steam のランキング（`lib/steam.ts`）は鍵なしの公開 API。Steam のゲームを Twitch のゲームに結び付けるのは
 Steam のID → IGDB（external_games、Steam は external_game_source = 1）→ Twitch（igdb_id）。上位100のうち86本が結べた。
 Twitch 側の Counter-Strike と Dota 2 は IGDB の ID が空なので手で対応を書いている（`STEAM_TO_TWITCH`）。
@@ -339,7 +351,7 @@ GitHub Secrets（`CRON_SECRET` / `SITE_URL`）は手動実行のワークフロ�
 `BLUESKY_*` は手元から誤って投稿しないよう `.env.local` に入れず、`npx wrangler secret put BLUESKY_HANDLE` のように
 個別に入れる（ヨルシカと同じ）。無いあいだは投稿しない。入れた後は
 `npm run test:cron -- "bluesky?kind=live&dryRun=1" https://stream-trends.sukinote.com` で文面とログインだけ確かめられる。
-投稿は cron-worker が呼ぶ時刻で決まる（日本時間8時：前日のまとめ、9・12・18・21時：いま見られている配信）。
+投稿は cron-worker が呼ぶ時刻で決まる（日本時間8時：前日のまとめ、12・18・21時：いま見られている配信）。
 12・18・21時は日本の配信の視聴者数を実測して決めた（2026-10-11、土日の1日分。1週間ほどたまったら見直す）。
 同じ回は `bsky_posts`（day 列に日付か live-日付-時 が入る）を見て二重に投稿しない。
 ハンドルは末尾まで必要（stream-trends.bsky.social）。「.」が無ければコードで .bsky.social を補う。

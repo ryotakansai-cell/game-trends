@@ -154,8 +154,16 @@ export async function deleteOldRecords() {
     args: [new Date(Date.now() - 10 * 24 * 3600 * 1000).toISOString()],
   });
 
+  // ゲームの人数（Steam・Roblox）の毎時の記録も、配信と同じく90日で消す。
+  // 日ごとの集計はまだ無いので、90日より前の推移は残らない（必要になったら集計を足す）
+  const play = await db.execute({
+    sql: "DELETE FROM play_snapshots WHERE captured_at < ?",
+    args: [cutoff],
+  });
+
   return {
     deleted_snapshots: snapshots.rowsAffected,
     deleted_video_checks: checks.rowsAffected,
+    deleted_play_snapshots: play.rowsAffected,
   };
 }
