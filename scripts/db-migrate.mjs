@@ -35,6 +35,31 @@ await db.batch(
       last_live_at  TEXT NOT NULL      -- 最後に配信中を確認した時刻（30日なければ監視をやめる）
     )`,
 
+    // ゲームを「遊んでいる人数」のマスタ（Steam・Roblox など）。配信の accounts と同じ考え方で、
+    // 名前や画像は毎時保存せずここに1行だけ持つ（1日1回更新）
+    `CREATE TABLE IF NOT EXISTS play_titles (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      platform       TEXT NOT NULL,   -- 'steam' / 'roblox'
+      external_id    TEXT NOT NULL,   -- Steam の appid / Roblox の universeId
+      name           TEXT NOT NULL,
+      image_url      TEXT,
+      twitch_game_id TEXT,            -- 対応する Twitch のゲーム（Roblox は全部 Roblox のカテゴリ）
+      updated_at     TEXT NOT NULL,
+      UNIQUE (platform, external_id)
+    )`,
+    // 毎時の人数の記録。配信の live_snapshots と同じく90日で消す
+    `CREATE TABLE IF NOT EXISTS play_snapshots (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      title_id    INTEGER NOT NULL REFERENCES play_titles(id),
+      players     INTEGER,            -- 人数を公開していないゲームは NULL（Steam の Deadlock など）
+      rank        INTEGER NOT NULL,   -- その回の順位
+      peak_today  INTEGER,            -- Steam のみ：今日のピーク
+      prev_rank   INTEGER,            -- Steam のみ：先週の順位
+      captured_at TEXT NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_play_snapshots_title_time ON play_snapshots (title_id, captured_at)`,
+    `CREATE INDEX IF NOT EXISTS idx_play_snapshots_time ON play_snapshots (captured_at)`,
+
     // Bluesky に投稿した日（同じ日を二重に投稿しないため。uri は投稿のID。削除するときに使う）
     `CREATE TABLE IF NOT EXISTS bsky_posts (
       day       TEXT PRIMARY KEY,  -- 日本時間の日付（その日の日付ページを投稿した）

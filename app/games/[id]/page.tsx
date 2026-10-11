@@ -69,7 +69,7 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
   // Steam で今遊んでいる人数も一緒に取る（Steam に無いゲームや、結び付けられないものは null）
   const [details, steam] = await Promise.all([
     getGameDetails(game.igdb_id).catch(() => null),
-    getSteamPlayersForTwitchGame(game).catch(() => null),
+    getSteamPlayersForTwitchGame(game.id).catch(() => null),
   ]);
 
   // 配信者アイコンは表示時にその場で取得する（DBには保存しない方針）。
@@ -137,11 +137,11 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
             が視聴中
           </p>
           {/* Steam で遊んでいる人数。「見るゲームか、遊ぶゲームか」を並べて見せる */}
-          {steam?.players != null && (
+          {steam != null && (
             <p className="mt-1 text-sm text-gray-400">
               Steamで
               <span className="font-bold text-gray-100">
-                {formatViewers(steam.players)}人
+                {formatViewers(steam)}人
               </span>
               がプレイ中
               <Link
