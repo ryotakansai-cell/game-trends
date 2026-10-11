@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rollupPendingDays, deleteOldRecords } from "@/lib/daily-stats";
-import { postDailyRanking } from "@/lib/bluesky";
 
 export const dynamic = "force-dynamic";
 
@@ -13,15 +12,9 @@ export async function GET(request: NextRequest) {
   }
 
   // ?dryRun=1 では何も書かない（集計は書き込みそのものなので、確かめるだけにする）。
-  // Bluesky は「投稿するならこれ」と、登録した認証情報でログインできるかだけ返す
+  // Bluesky の投稿の確認は /api/cron/bluesky?kind=daily&dryRun=1 で行う
   if (request.nextUrl.searchParams.get("dryRun") === "1") {
-    return NextResponse.json({
-      dry_run: true,
-      note: "dryRun では集計しない",
-      bluesky: await postDailyRanking(true).catch((e) => ({
-        error: String(e),
-      })),
-    });
+    return NextResponse.json({ dry_run: true, note: "dryRun では集計しない" });
   }
 
   try {
@@ -37,11 +30,7 @@ export async function GET(request: NextRequest) {
     // 順番が大事：まとめてから消す。まとめる途中で失敗したら、消す処理には進まない
     const rolledUp = await rollupPendingDays(from ?? undefined);
     const deleted = await deleteOldRecords();
-    // 前日のランキングを Bluesky に投稿する。失敗しても集計は済んでいるので、cron は成功扱いにする
-    const bluesky = await postDailyRanking(false).catch((e) => ({
-      error: String(e).slice(0, 300),
-    }));
-    return NextResponse.json({ rolled_up: rolledUp, ...deleted, bluesky });
+    return NextResponse.json({ rolled_up: rolledUp, ...deleted });
   } catch (e) {
     console.error(e);
     return NextResponse.json({ error: String(e) }, { status: 500 });

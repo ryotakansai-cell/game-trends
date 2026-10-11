@@ -77,7 +77,8 @@ app/
 └── api/
     ├── cron/snapshot/route.ts        Twitch: 毎時DBに保存（games/snapshots、accounts/live_snapshots）
     ├── cron/youtube-snapshot/route.ts YouTube: 毎時DBに保存（accounts/live_snapshots、監視リスト）
-    └── cron/daily/route.ts           毎日: 前日分を daily_stats にまとめ、90日より古い毎時の記録を消す
+    ├── cron/daily/route.ts           毎日: 前日分を daily_stats にまとめ、90日より古い毎時の記録を消す
+    └── cron/bluesky/route.ts         Bluesky に投稿（?kind=daily / live。cron-worker が決まった時刻に呼ぶ）
 components/
 ├── SiteHeader.tsx              全ページ共通のヘッダー（ホーム + 下線ナビ）
 ├── PageHeader.tsx              各ページの見出し（紫の小さな英字 + 白い見出し + 右上に地域 + 下に絞り込み）
@@ -100,7 +101,7 @@ lib/
 ├── streamer-list.ts            配信者タブの一覧（並び替え）と検索
 ├── stats-extras.ts             配信者ページの追加情報（時間帯・同じゲームの人・選んだ日の配信）を3ページ共通で取る
 ├── og.tsx                      OGP 画像の共通部品（日本語フォントの取得・ロゴ・枠）
-├── bluesky.ts                  毎朝、前日の配信ランキングを Bluesky に投稿する（日付ページの OGP 画像つきリンクカード）
+├── bluesky.ts                  Bluesky への投稿（朝8時に前日のまとめ、9・12・18・21時にいま見られている配信）
 ├── account-stats.ts            アカウントの直近30日の統計（daily_stats と、ゲームは毎時の記録から）
 ├── snapshot-range.ts           live_snapshots を時刻の範囲で絞る部品、日本時間の日付
 └── db.ts                       Turso接続（読み書き共通の1関数）と、大量書き込みを500件ずつに分ける部品
@@ -328,8 +329,11 @@ CRON_SECRET
 GitHub Secrets（`CRON_SECRET` / `SITE_URL`）は手動実行のワークフロー用。
 `BLUESKY_*` は手元から誤って投稿しないよう `.env.local` に入れず、`npx wrangler secret put BLUESKY_HANDLE` のように
 個別に入れる（ヨルシカと同じ）。無いあいだは投稿しない。入れた後は
-`npm run test:cron -- "daily?dryRun=1" https://stream-trends.sukinote.com` でログインできるかだけ確かめられる。
-投稿は毎朝の集計の後（毎時の収集が集計に追いついたときも）。同じ日は `bsky_posts` を見て二重に投稿しない。
+`npm run test:cron -- "bluesky?kind=live&dryRun=1" https://stream-trends.sukinote.com` で文面とログインだけ確かめられる。
+投稿は cron-worker が呼ぶ時刻で決まる（日本時間8時：前日のまとめ、9・12・18・21時：いま見られている配信）。
+12・18・21時は日本の配信の視聴者数を実測して決めた（2026-10-11、土日の1日分。1週間ほどたまったら見直す）。
+同じ回は `bsky_posts`（day 列に日付か live-日付-時 が入る）を見て二重に投稿しない。
+ハンドルは末尾まで必要（stream-trends.bsky.social）。「.」が無ければコードで .bsky.social を補う。
 
 ## デプロイ
 
