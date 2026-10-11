@@ -32,6 +32,9 @@ export const metadata: Metadata = {
     locale: "ja_JP",
     type: "website",
   },
+  // X（旧Twitter）は、これが無いと OGP 画像を小さいサムネイルでしか出さない。
+  // 画像そのものは各ページの opengraph-image を X も使う
+  twitter: { card: "summary_large_image" },
 };
 
 export const viewport = {
