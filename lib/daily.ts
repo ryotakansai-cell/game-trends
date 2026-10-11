@@ -9,7 +9,7 @@ import { jstDay } from "@/lib/snapshot-range";
 //   - Twitch：配信の言語が日本語
 //   - YouTube：日本向けの検索で見つかった監視リストのチャンネル
 //   - 名寄せ済みの本人アカウント（日本の配信者を名寄せしている）
-const JAPAN_FILTER = `
+export const JAPAN_FILTER = `
   a.relation = 'self' AND (
     a.language = 'ja'
     OR a.id IN (SELECT account_id FROM youtube_watch)
