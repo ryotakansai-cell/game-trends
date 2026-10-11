@@ -35,6 +35,13 @@ await db.batch(
       last_live_at  TEXT NOT NULL      -- 最後に配信中を確認した時刻（30日なければ監視をやめる）
     )`,
 
+    // Bluesky に投稿した日（同じ日を二重に投稿しないため。uri は投稿のID。削除するときに使う）
+    `CREATE TABLE IF NOT EXISTS bsky_posts (
+      day       TEXT PRIMARY KEY,  -- 日本時間の日付（その日の日付ページを投稿した）
+      uri       TEXT NOT NULL,
+      posted_at TEXT NOT NULL
+    )`,
+
     // 一度確かめた YouTube の動画。配信ではない・配信が終わった動画（done）は
     // 二度と videos.list で確かめない。配信予定・配信中（pending）は毎時確かめる
     `CREATE TABLE IF NOT EXISTS youtube_video_checks (

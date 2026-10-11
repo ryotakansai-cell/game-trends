@@ -100,6 +100,7 @@ lib/
 ├── streamer-list.ts            配信者タブの一覧（並び替え）と検索
 ├── stats-extras.ts             配信者ページの追加情報（時間帯・同じゲームの人・選んだ日の配信）を3ページ共通で取る
 ├── og.tsx                      OGP 画像の共通部品（日本語フォントの取得・ロゴ・枠）
+├── bluesky.ts                  毎朝、前日の配信ランキングを Bluesky に投稿する（日付ページの OGP 画像つきリンクカード）
 ├── account-stats.ts            アカウントの直近30日の統計（daily_stats と、ゲームは毎時の記録から）
 ├── snapshot-range.ts           live_snapshots を時刻の範囲で絞る部品、日本時間の日付
 └── db.ts                       Turso接続（読み書き共通の1関数）と、大量書き込みを500件ずつに分ける部品
@@ -314,6 +315,8 @@ TWITCH_CLIENT_SECRET
 TURSO_DATABASE_URL
 TURSO_AUTH_TOKEN
 YOUTUBE_API_KEY
+BLUESKY_HANDLE         Bluesky のボット（stream-trends.bsky.social）。Worker の Secret のみ
+BLUESKY_APP_PASSWORD   ボット用のアプリパスワード（本パスワードではない）。Worker の Secret のみ
 CRON_SECRET
 ```
 
@@ -323,6 +326,10 @@ CRON_SECRET
 `cron-worker` には `CRON_SECRET` だけを、`cron-worker` フォルダで
 `npx wrangler secret put CRON_SECRET` で入れる（フォルダを間違えるとサイト側に入る）。
 GitHub Secrets（`CRON_SECRET` / `SITE_URL`）は手動実行のワークフロー用。
+`BLUESKY_*` は手元から誤って投稿しないよう `.env.local` に入れず、`npx wrangler secret put BLUESKY_HANDLE` のように
+個別に入れる（ヨルシカと同じ）。無いあいだは投稿しない。入れた後は
+`npm run test:cron -- "daily?dryRun=1" https://stream-trends.sukinote.com` でログインできるかだけ確かめられる。
+投稿は毎朝の集計の後（毎時の収集が集計に追いついたときも）。同じ日は `bsky_posts` を見て二重に投稿しない。
 
 ## デプロイ
 
