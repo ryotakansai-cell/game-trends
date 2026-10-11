@@ -10,6 +10,7 @@ import {
 } from "@/lib/twitch";
 import { getDbClient, batchInChunks } from "@/lib/db";
 import { rollupIfBehind } from "@/lib/daily-stats";
+import { postDailyRanking } from "@/lib/bluesky";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -170,6 +171,13 @@ export async function GET(request: NextRequest) {
       console.error("集計の追いつきに失敗", e);
       return [];
     });
+    // ここで追いついた日は、毎朝の集計で投稿されていないので Bluesky にも投稿する
+    // （投稿済みかは bsky_posts で確かめるので、二重にはならない）
+    if (rolledUp.length > 0) {
+      await postDailyRanking(false).catch((e) =>
+        console.error("Bluesky への投稿に失敗", e),
+      );
+    }
 
     return NextResponse.json({
       rolled_up: rolledUp,
