@@ -19,6 +19,7 @@ import {
   getGamesByIgdbIds,
   getJapaneseStreamCountsForGames,
   getViewersForGames,
+  boxArt,
 } from "@/lib/twitch";
 import {
   getPlayRanking,
@@ -136,13 +137,16 @@ export async function collectSteam(): Promise<{
 
   const titles: TitleInfo[] = refresh.map((appid, i) => {
     const igdbId = igdb.get(appid);
-    const twitchGameId =
-      STEAM_TO_TWITCH[appid] ??
-      (igdbId ? (twitchByIgdb.get(igdbId)?.id ?? null) : null);
+    const twitchGame = igdbId ? twitchByIgdb.get(igdbId) : undefined;
+    const twitchGameId = STEAM_TO_TWITCH[appid] ?? twitchGame?.id ?? null;
     return {
       externalId: appid,
       name: store[i]?.name ?? `Steam ${appid}`,
-      imageUrl: store[i]?.image ?? null,
+      // ストアに画像が無いときは、Twitch のゲームの画像（縦長のパッケージ）で代わりにする。
+      // マスタは毎日更新されるので、ストアに画像が付けば翌日には差し替わる
+      imageUrl:
+        store[i]?.image ??
+        (twitchGame ? boxArt(twitchGame.box_art_url, 184, 245) : null),
       twitchGameId,
     };
   });

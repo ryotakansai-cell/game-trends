@@ -79,6 +79,18 @@ async function rollupDay(day: string) {
     `,
     args: [from, to, day],
   });
+
+  // ゲームの人数（Steam・Roblox）も同じ日の分をまとめる。毎時の記録が90日で消えても、
+  // 日ごとの最高・平均・一番良かった順位は残る（ゲームの人数の推移を90日より前まで見るため）
+  await db.execute({
+    sql: `INSERT OR REPLACE INTO play_daily (title_id, day, peak_players, avg_players, best_rank)
+          SELECT title_id, ?, MAX(players), CAST(ROUND(AVG(players)) AS INTEGER), MIN(rank)
+          FROM play_snapshots
+          WHERE captured_at >= ? AND captured_at < ?
+          GROUP BY title_id`,
+    args: [day, from, to],
+  });
+
   return result.rowsAffected;
 }
 
