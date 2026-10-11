@@ -11,11 +11,16 @@ import {
 import { getChannelIcons, youtubeThumbnail } from "@/lib/youtube";
 import { formatViewers, formatDate } from "@/lib/twitch";
 import { StreamStats } from "@/components/StreamStats";
+import { DayStreams } from "@/components/DayStreams";
+import { loadStatsExtras, pickSelectedDay } from "@/lib/stats-extras";
+import { dayTitle } from "@/lib/daily";
 
 export const revalidate = 300;
 
 type Props = {
   params: Promise<{ channelId: string }>;
+  // ?day=2026-10-08：グラフで選んだ日。その日の配信をグラフの下に出す
+  searchParams: Promise<{ day?: string }>;
 };
 
 // YouTube のチャンネルIDは「UC + 22文字」。形が違うURLは DB を引かずに404にする
@@ -44,8 +49,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 /** YouTube だけで配信している人のページ。
  *  記録（DB）だけで作り、YouTube API はアイコンの1回（1日作り置き）しか使わない。
  *  検索エンジンに何千ページも巡回されても、1日の枠を使い切らないようにするため */
-export default async function YouTubeChannelPage({ params }: Props) {
+export default async function YouTubeChannelPage({
+  params,
+  searchParams,
+}: Props) {
   const { channelId } = await params;
+  const { day } = await searchParams;
   const account = await loadAccount(channelId);
   // 記録に無いチャンネルはページを作らない（どんなIDでも表示すると、その分 API を呼ばれる）
   if (!account) notFound();
@@ -60,6 +69,15 @@ export default async function YouTubeChannelPage({ params }: Props) {
   ]);
   const iconUrl = icons.get(channelId);
   const name = account.displayName;
+
+  // 時間帯・選んだ日の配信（YouTube にはゲームの情報が無いので、同じゲームの人は出ない）
+  const selectedDay = pickSelectedDay(stats, day);
+  const extras = await loadStatsExtras({
+    accountIds: [account.id],
+    stats,
+    games: new Map(),
+    selectedDay,
+  });
   const q = encodeURIComponent(name);
 
   // 最後の記録が90分以内なら、まだ配信中とみなす（毎時の記録なので、1時間＋余裕）
@@ -127,7 +145,23 @@ export default async function YouTubeChannelPage({ params }: Props) {
       </div>
 
       {/* YouTube にはゲームの情報が無いので、「よく遊んだゲーム」は出ない */}
-      <StreamStats stats={stats} games={new Map()} />
+      <StreamStats
+        stats={stats}
+        games={new Map()}
+        heatmap={extras.heatmap}
+        dayHref={(d) => `/youtube/${channelId}?day=${d}`}
+        selectedDay={selectedDay}
+        dayPanel={
+          selectedDay ? (
+            <DayStreams
+              dayLabel={dayTitle(selectedDay)}
+              closeHref={`/youtube/${channelId}`}
+              streams={extras.dayStreams}
+              games={extras.games}
+            />
+          ) : undefined
+        }
+      />
 
       <section className="mt-10">
         <h2 className="text-lg font-bold text-gray-200">最近のライブ配信</h2>

@@ -1,5 +1,6 @@
 import { getDbClient } from "@/lib/db";
 import { jstDay } from "@/lib/snapshot-range";
+import { JAPAN_FILTER } from "@/lib/daily";
 
 /** グラフの1日分。配信しなかった日は peak = 0 */
 export type DayPoint = {
@@ -205,4 +206,130 @@ export async function getAccountStats(
       hours: Number(r.hours),
     })),
   };
+}
+
+export type DayStream = {
+  title: string;
+  contentId: string | null; // YouTube の動画ID（Twitch は無い）
+  gameId: string | null;
+  peakViewers: number;
+  hours: number;
+  startAt: string | null; // 最初に記録した時刻（主な1本しか残っていない古い日は null）
+};
+
+/** ある日（日本時間）に配信していたものを、長かった順に返す。
+ *  90日以内は毎時の記録から全部、それより前は日ごとの集計に残した主な1本だけ */
+export async function getDayStreams(
+  accountIds: number[],
+  day: string,
+): Promise<DayStream[]> {
+  if (accountIds.length === 0) return [];
+  const db = getDbClient();
+  const start = new Date(`${day}T00:00:00+09:00`);
+  const from = start.toISOString();
+  const to = new Date(start.getTime() + 24 * 3600 * 1000).toISOString();
+  const ids = accountIds.map(() => "?").join(",");
+
+  const raw = await db.execute({
+    sql: `SELECT MAX(title) AS title, content_id, MAX(game_id) AS game_id,
+                 MAX(viewers) AS peak, COUNT(DISTINCT substr(captured_at, 1, 13)) AS hours,
+                 MIN(captured_at) AS start_at
+          FROM live_snapshots
+          WHERE account_id IN (${ids}) AND captured_at >= ? AND captured_at < ?
+            AND title IS NOT NULL
+          GROUP BY COALESCE(content_id, title)
+          ORDER BY hours DESC, peak DESC
+          LIMIT 10`,
+    args: [...accountIds, from, to],
+  });
+  if (raw.rows.length > 0) {
+    return raw.rows.map((r) => ({
+      title: String(r.title),
+      contentId: r.content_id ? String(r.content_id) : null,
+      gameId: r.game_id ? String(r.game_id) : null,
+      peakViewers: Number(r.peak),
+      hours: Number(r.hours),
+      startAt: String(r.start_at),
+    }));
+  }
+
+  // 毎時の記録が消えた古い日は、日ごとの集計に残した主な1本
+  const kept = await db.execute({
+    sql: `SELECT main_title, main_content_id, top_game_id, peak_viewers, hours_live
+          FROM daily_stats
+          WHERE account_id IN (${ids}) AND day = ? AND main_title IS NOT NULL
+          ORDER BY hours_live DESC`,
+    args: [...accountIds, day],
+  });
+  return kept.rows.map((r) => ({
+    title: String(r.main_title),
+    contentId: r.main_content_id ? String(r.main_content_id) : null,
+    gameId: r.top_game_id ? String(r.top_game_id) : null,
+    peakViewers: Number(r.peak_viewers),
+    hours: Number(r.hours_live),
+    startAt: null,
+  }));
+}
+
+/** よく配信する時間帯。直近 days 日の毎時の記録を、日本時間の曜日（0=日曜）×時（0〜23）で数える。
+ *  値は「その曜日のその時間に配信していた回数」（4週なら最大4〜5） */
+export async function getHourHeatmap(
+  accountIds: number[],
+  days = 28,
+): Promise<number[][]> {
+  const grid = Array.from({ length: 7 }, () => Array<number>(24).fill(0));
+  if (accountIds.length === 0) return grid;
+  const db = getDbClient();
+  const since = new Date(Date.now() - days * 24 * 3600 * 1000).toISOString();
+  const ids = accountIds.map(() => "?").join(",");
+  // 同じ時刻に Twitch と YouTube の両方で記録されていても1回と数える
+  const r = await db.execute({
+    sql: `SELECT strftime('%w', captured_at, '+9 hours') AS wd,
+                 strftime('%H', captured_at, '+9 hours') AS h,
+                 COUNT(DISTINCT substr(captured_at, 1, 13)) AS n
+          FROM live_snapshots
+          WHERE account_id IN (${ids}) AND captured_at >= ?
+          GROUP BY wd, h`,
+    args: [...accountIds, since],
+  });
+  for (const row of r.rows) {
+    grid[Number(row.wd)][Number(row.h)] = Number(row.n);
+  }
+  return grid;
+}
+
+/** 同じゲームを直近7日に配信していた日本の配信者（最高同接の大きい順）。
+ *  日ごとの集計の「その日一番遊んだゲーム」で見るので、少しだけ遊んだ人は入らない */
+export async function getSameGameStreamers(
+  gameId: string,
+  excludeAccountIds: number[],
+  limit = 6,
+) {
+  const db = getDbClient();
+  const since = jstDay(new Date(Date.now() - 7 * 24 * 3600 * 1000));
+  const exclude = excludeAccountIds.length
+    ? `AND a.id NOT IN (${excludeAccountIds.map(() => "?").join(",")})`
+    : "";
+  const r = await db.execute({
+    sql: `SELECT a.id, a.platform, a.platform_id, a.login, a.creator_id,
+                 COALESCE(c.display_name, a.display_name) AS name,
+                 MAX(d.peak_viewers) AS peak
+          FROM daily_stats d
+          JOIN accounts a ON a.id = d.account_id
+          LEFT JOIN creators c ON c.id = a.creator_id
+          WHERE d.day >= ? AND d.top_game_id = ? ${exclude} AND ${JAPAN_FILTER}
+          GROUP BY a.id
+          ORDER BY peak DESC
+          LIMIT ?`,
+    args: [since, gameId, ...excludeAccountIds, limit],
+  });
+  return r.rows.map((row) => ({
+    platform:
+      row.platform === "youtube" ? ("youtube" as const) : ("twitch" as const),
+    platformId: String(row.platform_id),
+    login: row.login ? String(row.login) : null,
+    creatorId: row.creator_id === null ? null : Number(row.creator_id),
+    displayName: String(row.name),
+    peakViewers: Number(row.peak),
+  }));
 }

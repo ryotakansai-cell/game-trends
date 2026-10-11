@@ -17,8 +17,17 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    // ?from=2026-09-13 で、その日からまとめ直す（日ごとの集計に列を足したとき、過去の日も埋めるため）
+    const from = request.nextUrl.searchParams.get("from");
+    if (from !== null && !/^\d{4}-\d{2}-\d{2}$/.test(from)) {
+      return NextResponse.json(
+        { error: "from は 2026-10-01 の形で" },
+        { status: 400 },
+      );
+    }
+
     // 順番が大事：まとめてから消す。まとめる途中で失敗したら、消す処理には進まない
-    const rolledUp = await rollupPendingDays();
+    const rolledUp = await rollupPendingDays(from ?? undefined);
     const deleted = await deleteOldRecords();
     return NextResponse.json({ rolled_up: rolledUp, ...deleted });
   } catch (e) {

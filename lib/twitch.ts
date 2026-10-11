@@ -350,6 +350,24 @@ export async function getClipsByBroadcaster(
   return twitchFetch<TwitchClip>(`/clips?${params.toString()}`);
 }
 
+/** 指定した期間に作られた人気クリップ（配信者ページで、グラフの日を選んだとき用） */
+export async function getClipsInRange(
+  broadcasterId: string,
+  from: Date,
+  to: Date,
+  limit = 8,
+) {
+  // Twitch は秒までの形（ミリ秒なし）を求める
+  const iso = (d: Date) => d.toISOString().split(".")[0] + "Z";
+  const params = new URLSearchParams({
+    broadcaster_id: broadcasterId,
+    first: String(limit),
+    started_at: iso(from),
+    ended_at: iso(to),
+  });
+  return twitchFetch<TwitchClip>(`/clips?${params.toString()}`);
+}
+
 /** 過去の配信アーカイブを取得 */
 export async function getVideosByUser(userId: string, limit = 6) {
   const params = new URLSearchParams({

@@ -18,6 +18,10 @@ import {
 } from "@/lib/twitch";
 import { getAccountId, getAccountStats } from "@/lib/account-stats";
 import { StreamStats } from "@/components/StreamStats";
+import { DayStreams } from "@/components/DayStreams";
+import { SameGameStreamers } from "@/components/SameGameStreamers";
+import { loadStatsExtras, pickSelectedDay } from "@/lib/stats-extras";
+import { dayTitle } from "@/lib/daily";
 
 export const revalidate = 300;
 
@@ -25,16 +29,19 @@ export const revalidate = 300;
  *  記録が無い人（日本語以外で上位800に入らない人など）は null */
 async function loadStats(twitchUserId: string) {
   const accountId = await getAccountId("twitch", twitchUserId);
-  if (accountId === null) return { stats: null, games: new Map() };
+  if (accountId === null)
+    return { accountId: null, stats: null, games: new Map() };
   const stats = await getAccountStats(accountId);
   const games = await getGamesByIds(
     stats?.topGames.map((g) => g.gameId) ?? [],
   ).catch(() => new Map());
-  return { stats, games };
+  return { accountId, stats, games };
 }
 
 type Props = {
   params: Promise<{ login: string }>;
+  // ?day=2026-10-08：グラフで選んだ日。その日の配信をグラフの下に出す
+  searchParams: Promise<{ day?: string }>;
 };
 
 // 同じユーザー情報を generateMetadata と本体の両方で使うので
@@ -58,8 +65,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-export default async function StreamerPage({ params }: Props) {
+export default async function StreamerPage({ params, searchParams }: Props) {
   const { login } = await params;
+  const { day } = await searchParams;
 
   const user = await loadUser(login);
   if (!user) notFound();
@@ -69,8 +77,26 @@ export default async function StreamerPage({ params }: Props) {
     getClipsByBroadcaster(user.id, 7, 12).catch(() => []),
     getVideosByUser(user.id, 6).catch(() => []),
     // DB が読めなくてもページ全体は出す（統計の欄が「記録なし」になるだけ）
-    loadStats(user.id).catch(() => ({ stats: null, games: new Map() })),
+    loadStats(user.id).catch(() => ({
+      accountId: null,
+      stats: null,
+      games: new Map(),
+    })),
   ]);
+
+  // 時間帯・同じゲームの人・選んだ日の配信（記録がある人だけ）
+  const selectedDay = pickSelectedDay(statsData.stats, day);
+  const extras =
+    statsData.accountId !== null
+      ? await loadStatsExtras({
+          accountIds: [statsData.accountId],
+          stats: statsData.stats,
+          games: statsData.games,
+          twitchUserId: user.id,
+          selectedDay,
+        })
+      : null;
+  const games = extras?.games ?? statsData.games;
 
   const q = encodeURIComponent(user.display_name);
 
@@ -189,7 +215,33 @@ export default async function StreamerPage({ params }: Props) {
       )}
 
       {/* 配信の記録：検索で来た人が一番知りたい「どれくらい見られている人か」を先に見せる */}
-      <StreamStats stats={statsData.stats} games={statsData.games} />
+      <StreamStats
+        stats={statsData.stats}
+        games={games}
+        heatmap={extras?.heatmap}
+        dayHref={(d) => `/streamers/${login}?day=${d}`}
+        selectedDay={selectedDay}
+        dayPanel={
+          selectedDay && extras ? (
+            <DayStreams
+              dayLabel={dayTitle(selectedDay)}
+              closeHref={`/streamers/${login}`}
+              streams={extras.dayStreams}
+              games={games}
+              vods={extras.vods}
+              clips={extras.clips}
+            />
+          ) : undefined
+        }
+      />
+
+      {extras?.topGameId && games.get(extras.topGameId) && (
+        <SameGameStreamers
+          gameId={extras.topGameId}
+          gameName={games.get(extras.topGameId)!.name}
+          entries={extras.sameGame}
+        />
+      )}
 
       {/* クリップ */}
       <section className="mt-10">
