@@ -12,6 +12,8 @@ import {
 } from "@/lib/twitch";
 import { getPlayRanking } from "@/lib/play";
 import { getAppStoreRanking } from "@/lib/appstore";
+import { getGameBuzz } from "@/lib/game-buzz";
+import { GameBuzz } from "@/components/GameBuzz";
 
 export const metadata: Metadata = {
   title: "ゲームランキング",
@@ -38,13 +40,15 @@ type Item = {
  *  （混ぜると「どの数字で何位なのか」が説明できなくなる）。全件は各タブで見る */
 export default async function GamesOverviewPage() {
   // どれか1つが取れなくても、ほかのプラットフォームは出す
-  const [twitch, viewerCounts, steam, roblox, appstore] = await Promise.all([
-    getTopGames(40).catch(() => []),
-    getViewerCountByGame(5).catch(() => new Map<string, number>()),
-    getPlayRanking("steam", TOP).catch(() => []),
-    getPlayRanking("roblox", TOP).catch(() => []),
-    getAppStoreRanking("grossing", TOP).catch(() => []),
-  ]);
+  const [twitch, viewerCounts, steam, roblox, appstore, buzz] =
+    await Promise.all([
+      getTopGames(40).catch(() => []),
+      getViewerCountByGame(5).catch(() => new Map<string, number>()),
+      getPlayRanking("steam", TOP).catch(() => []),
+      getPlayRanking("roblox", TOP).catch(() => []),
+      getAppStoreRanking("grossing", TOP).catch(() => []),
+      getGameBuzz().catch(() => []),
+    ]);
 
   const sections: {
     title: string;
@@ -132,6 +136,9 @@ export default async function GamesOverviewPage() {
         }
         filters={<GameTabs current="overview" />}
       />
+
+      {/* 話題が無い時間は枠ごと出さない（無理に並べると、ただの飾りになるため） */}
+      {buzz.length > 0 && <GameBuzz items={buzz} />}
 
       <div className="mt-8 grid grid-cols-1 gap-x-12 gap-y-10 md:grid-cols-2">
         {sections.map((s) => (
