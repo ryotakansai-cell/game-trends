@@ -3,12 +3,14 @@ import type { Metadata } from "next";
 import { PageHeader } from "@/components/PageHeader";
 import { GameTabs } from "@/components/GameTabs";
 import { SegmentedTabs } from "@/components/SegmentedTabs";
+import { RankChange } from "@/components/PlayRankingList";
+import { RelativeTime } from "@/components/RelativeTime";
 import { getAppStoreRanking, type AppStoreChart } from "@/lib/appstore";
 
 export const metadata: Metadata = {
   title: "App Store ゲームランキング（日本）",
   description:
-    "iPhoneのApp Storeで、日本のセールス上位・無料上位のゲームのランキング。",
+    "iPhoneのApp Storeで、日本のセールス上位・無料上位のゲームのランキング。24時間前からの順位の変化も表示します。",
   alternates: { canonical: "/games/appstore" },
 };
 
@@ -17,7 +19,8 @@ type Props = { searchParams: Promise<{ chart?: string }> };
 export default async function AppStoreGamesPage({ searchParams }: Props) {
   const { chart } = await searchParams;
   const current: AppStoreChart = chart === "free" ? "free" : "grossing";
-  // 取れなかったときはページごと 500 にせず、空の一覧と案内を出す
+  // DB から読む（Apple の RSS は GitHub Actions が取って保存している。lib/appstore.ts）。
+  // 読めなかったときはページごと 500 にせず、空の一覧と案内を出す
   const games = await getAppStoreRanking(current, 50).catch(() => []);
 
   return (
@@ -31,7 +34,12 @@ export default async function AppStoreGamesPage({ searchParams }: Props) {
             {current === "grossing"
               ? "売上の多い順"
               : "無料でよくダウンロードされている順"}
-            <span className="mt-0.5 block text-gray-500">更新：1時間ごと</span>
+            {games[0] && (
+              <span className="mt-0.5 block text-gray-500">
+                更新：1時間ごと（
+                <RelativeTime iso={games[0].capturedAt} />）
+              </span>
+            )}
           </>
         }
         // セールス / 無料 はずっと2択なので、つながったスイッチ（地域の切り替えと同じ形）
@@ -73,17 +81,22 @@ export default async function AppStoreGamesPage({ searchParams }: Props) {
               rel="noopener noreferrer"
               className="group flex items-center gap-3 py-3"
             >
-              <span className="w-6 shrink-0 text-right text-sm tabular-nums text-gray-400">
-                {g.rank}
-              </span>
+              <div className="flex w-6 shrink-0 flex-col items-end">
+                <span className="text-sm tabular-nums text-gray-400">
+                  {g.rank}
+                </span>
+                <RankChange rank={g.rank} prevRank={g.rank24hAgo} />
+              </div>
               <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-white/5">
-                <Image
-                  src={g.iconUrl}
-                  alt={g.name}
-                  fill
-                  className="object-cover"
-                  unoptimized
-                />
+                {g.iconUrl && (
+                  <Image
+                    src={g.iconUrl}
+                    alt={g.name}
+                    fill
+                    className="object-cover"
+                    unoptimized
+                  />
+                )}
               </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-bold text-gray-100 group-hover:text-purple-300">

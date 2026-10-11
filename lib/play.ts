@@ -3,7 +3,10 @@
 // 配信の accounts / live_snapshots と同じ考え方で、名前や画像は毎時保存しない。
 import { getDbClient, batchInChunks } from "@/lib/db";
 
-export type PlayPlatform = "steam" | "roblox";
+// App Store は「セールス」と「無料」で順位表が別なので、2つの platform に分けて持つ
+// （同じアプリが両方に入ると、マスタの行も2つになる）
+export type PlayPlatform =
+  "steam" | "roblox" | "appstore_grossing" | "appstore_free";
 
 /** 毎時の収集で集めた1本分 */
 export type PlayRow = {
@@ -20,6 +23,7 @@ export type TitleInfo = {
   name: string;
   imageUrl: string | null;
   twitchGameId: string | null;
+  developer?: string | null; // App Store のみ
 };
 
 /** マスタの更新が必要なもの（まだ無い・1日以上前に更新した）の外部IDを返す */
@@ -51,12 +55,13 @@ export async function savePlaySnapshot(
   await batchInChunks(
     db,
     titles.map((t) => ({
-      sql: `INSERT INTO play_titles (platform, external_id, name, image_url, twitch_game_id, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+      sql: `INSERT INTO play_titles (platform, external_id, name, image_url, twitch_game_id, developer, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(platform, external_id) DO UPDATE SET
               name = excluded.name,
               image_url = excluded.image_url,
               twitch_game_id = excluded.twitch_game_id,
+              developer = excluded.developer,
               updated_at = excluded.updated_at`,
       args: [
         platform,
@@ -64,6 +69,7 @@ export async function savePlaySnapshot(
         t.name,
         t.imageUrl,
         t.twitchGameId,
+        t.developer ?? null,
         capturedAt,
       ],
     })),
@@ -96,17 +102,22 @@ export type PlayRankingRow = {
   peakToday: number | null;
   prevRank: number | null;
   players24hAgo: number | null; // 24時間前に一番近い記録（前後2時間以内）。無ければ null
+  rank24hAgo: number | null; // 同じく24時間前の順位
+  developer: string | null;
   capturedAt: string;
 };
 
-/** 最新の収集の順位表。24時間前の人数も添える（急上昇・前日比のため） */
+/** 最新の収集の順位表。24時間前の人数と順位も添える（急上昇・前日比のため）。
+ *  freshHours より古い記録しか無ければ空にする（収集が止まったまま古い順位を出し続けないため）。
+ *  App Store は GitHub Actions の定期実行で集めていて数時間遅れることがあるので、長めに渡す */
 export async function getPlayRanking(
   platform: PlayPlatform,
   limit = 50,
+  freshHours = 3,
 ): Promise<PlayRankingRow[]> {
   const db = getDbClient();
   const now = Date.now();
-  const since = new Date(now - 3 * 3600 * 1000).toISOString();
+  const since = new Date(now - freshHours * 3600 * 1000).toISOString();
   const pastFrom = new Date(now - 26 * 3600 * 1000).toISOString();
   const pastTo = new Date(now - 22 * 3600 * 1000).toISOString();
   // 24時間前に一番近い記録を探す基準。内側の並び替えから外側の列（s.captured_at）は
@@ -119,19 +130,34 @@ export async function getPlayRanking(
             FROM play_snapshots s JOIN play_titles t ON t.id = s.title_id
             WHERE s.captured_at >= ? AND t.platform = ?
           )
-          SELECT t.external_id, t.name, t.image_url, t.twitch_game_id,
+          SELECT t.external_id, t.name, t.image_url, t.twitch_game_id, t.developer,
                  s.players, s.rank, s.peak_today, s.prev_rank, s.captured_at,
                  -- 24時間前に一番近い記録。(title_id, captured_at) の索引で前後2時間だけを見る
                  (SELECT p.players FROM play_snapshots p
                   WHERE p.title_id = t.id AND p.captured_at BETWEEN ? AND ?
                   ORDER BY ABS(strftime('%s', p.captured_at) - strftime('%s', ?))
-                  LIMIT 1) AS players_24h
+                  LIMIT 1) AS players_24h,
+                 (SELECT p.rank FROM play_snapshots p
+                  WHERE p.title_id = t.id AND p.captured_at BETWEEN ? AND ?
+                  ORDER BY ABS(strftime('%s', p.captured_at) - strftime('%s', ?))
+                  LIMIT 1) AS rank_24h
           FROM play_snapshots s
           JOIN play_titles t ON t.id = s.title_id
           WHERE s.captured_at = (SELECT at FROM latest) AND t.platform = ?
           ORDER BY s.rank
           LIMIT ?`,
-    args: [since, platform, pastFrom, pastTo, target, platform, limit],
+    args: [
+      since,
+      platform,
+      pastFrom,
+      pastTo,
+      target,
+      pastFrom,
+      pastTo,
+      target,
+      platform,
+      limit,
+    ],
   });
   return r.rows.map((row) => ({
     externalId: String(row.external_id),
@@ -143,6 +169,8 @@ export async function getPlayRanking(
     peakToday: row.peak_today === null ? null : Number(row.peak_today),
     prevRank: row.prev_rank === null ? null : Number(row.prev_rank),
     players24hAgo: row.players_24h === null ? null : Number(row.players_24h),
+    rank24hAgo: row.rank_24h === null ? null : Number(row.rank_24h),
+    developer: row.developer ? String(row.developer) : null,
     capturedAt: String(row.captured_at),
   }));
 }

@@ -70,10 +70,11 @@ app/
 ├── opengraph-image.tsx         サイト全体の OGP 画像（個別の画像が無いページで使われる）
 ├── creators/page.tsx           配信者一覧・検索（日本の配信者全体。配信中 / 7日の最高同接 / 7日の配信時間で並べ替え）
 ├── creators/[id]/page.tsx      クリエイター統合ページ（全プラットフォームを1ページに）
-├── games/page.tsx              ゲームランキング（Twitch で見られている順。YouTube側にゲーム判定が無いため）
+├── games/page.tsx              ゲームランキングの「総合」（各プラットフォームの上位5本を並べるだけ。単位が違うので順位は混ぜない）
+├── games/twitch/page.tsx       ゲームランキング（Twitch で見られている順。YouTube側にゲーム判定が無いため。以前は /games だった）
 ├── games/steam/page.tsx        ゲームランキング（Steam で遊ばれている順。24時間前比・Twitch の視聴者数・日本の配信数）
 ├── games/roblox/page.tsx       ゲームランキング（Roblox で遊ばれている順）
-├── games/appstore/page.tsx     ゲームランキング（App Store の日本のゲーム。セールス / 無料）
+├── games/appstore/page.tsx     ゲームランキング（App Store の日本のゲーム。セールス / 無料。24時間前からの順位の変化）
 ├── games/ratio/page.tsx        見られ度（Twitch の視聴者 ÷ Steam で遊んでいる人）
 ├── games/[id]/page.tsx         ゲーム詳細（配信者一覧 + 外部リンク）
 ├── streamers/[login]/page.tsx  配信者ページ（Twitch単体。配信の記録・クリップ・アーカイブ）
@@ -83,7 +84,8 @@ app/
     ├── cron/youtube-snapshot/route.ts YouTube: 毎時DBに保存（accounts/live_snapshots、監視リスト）
     ├── cron/daily/route.ts           毎日: 前日分を daily_stats にまとめ、90日より古い毎時の記録を消す
     ├── cron/bluesky/route.ts         Bluesky に投稿（?kind=daily / live。cron-worker が決まった時刻に呼ぶ）
-    └── cron/play-snapshot/route.ts   毎時: ゲームを遊んでいる人数（Steam・Roblox）を play_snapshots に記録
+    ├── cron/play-snapshot/route.ts   毎時: ゲームを遊んでいる人数（Steam・Roblox）を play_snapshots に記録
+    └── cron/appstore/route.ts        App Store の順位表を受け取って保存（POST。GitHub Actions が RSS を送ってくる）
 components/
 ├── SiteHeader.tsx              全ページ共通のヘッダー（ホーム + 下線ナビ）
 ├── PageHeader.tsx              各ページの見出し（紫の小さな英字 + 白い見出し + 右上に地域 + 下に絞り込み）
@@ -109,7 +111,7 @@ lib/
 ├── play.ts                     ゲームの人数の記録と読み取り（Steam・Roblox 共通。play_titles / play_snapshots）
 ├── steam.ts                    Steam の人数の収集（鍵なしの公開 API）と、Twitch のゲームへの結び付け（IGDB 経由）
 ├── roblox.ts                   Roblox の人数の収集（公式に案内されていない公開の窓口）
-├── appstore.ts                 App Store の日本のゲームのランキング（Apple 公式の RSS）
+├── appstore.ts                 App Store の日本のゲームのランキング（Apple 公式の RSS を読み解いて保存・DB から読む）
 ├── bluesky.ts                  Bluesky への投稿（朝8時に前日のまとめ、12・18・21時にいま見られている配信）
 ├── account-stats.ts            アカウントの直近30日の統計（daily_stats と、ゲームは毎時の記録から）
 ├── snapshot-range.ts           live_snapshots を時刻の範囲で絞る部品、日本時間の日付
@@ -277,6 +279,17 @@ Twitch 側の Counter-Strike と Dota 2 は IGDB の ID が空なので手で対
 同じ理由で、この2本は「IGDB の ID が空＝ゲームではない分類」の判定からも例外にしている（`isRealGame`）。
 以前はこの判定でゲームランキングから抜け落ちていた。Twitch の視聴者数はゲームごとに上位100配信を数える
 （複数のゲームをまとめて聞くと、小さな配信の多いゲームが3分の1ほどしか数えられなかった）。
+
+App Store の順位は、Apple が Cloudflare のサーバーからの RSS の読み取りを不安定に拒否する
+（2026-10-11。ブラウザの User-Agent を付けても通ったり通らなかったり）ため、GitHub Actions
+（`.github/workflows/appstore.yml`、毎時17分）が GitHub の回線で RSS を取り、`/api/cron/appstore` に
+POST で送って保存する。保存先は Steam・Roblox と同じ `play_titles` / `play_snapshots`
+（platform は `appstore_grossing` / `appstore_free`、人数は NULL で順位だけ、開発元は `play_titles.developer`）。
+GitHub の schedule は数時間遅れることがあるので、ページは12時間以内の記録なら出す。
+サイトの URL は Secret ではなく workflow に直接書いた（GitHub の `SITE_URL` は旧 Vercel のままかもしれないため）。
+
+ゲームの画像はプラットフォームをまたいで URL だけ持ち、毎日マスタで上書きする（画像ファイルは保存しない）。
+Steam のストアに画像が無いゲームは Twitch のパッケージ画像で代わりにしている。
 
 ## UIの約束ごと
 

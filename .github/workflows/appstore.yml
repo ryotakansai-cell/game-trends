@@ -1,0 +1,38 @@
+name: App Store ランキング収集
+
+# Apple は Cloudflare のサーバーからの RSS の読み取りを不安定に拒否するので、
+# GitHub の回線で RSS を取り、サイトの /api/cron/appstore に送って保存してもらう（lib/appstore.ts）。
+# GitHub の schedule は混雑時に数時間飛ばされることがあるが、App Store の順位は
+# 1時間単位で追う必要はないので許容している（ページは12時間以内の記録なら出す）
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+env:
+  # 公開しているURLなので Secret にしない（SITE_URL の Secret は旧 Vercel のURLのままの可能性がある）
+  SITE: https://stream-trends.sukinote.com
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: RSS を取ってサイトに送る
+        run: |
+          set -euo pipefail
+          # chart の名前（サイト側）と RSS の名前（Apple 側）の対応。lib/appstore.ts の FEED と同じ
+          for pair in grossing:topgrossingapplications free:topfreeapplications; do
+            chart="${pair%%:*}"
+            feed="${pair##*:}"
+            curl --fail --silent --show-error --retry 3 --retry-delay 10 \
+              -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36" \
+              -o feed.json \
+              "https://itunes.apple.com/jp/rss/${feed}/limit=100/genre=6014/json"
+            curl --fail-with-body --silent --show-error \
+              -X POST \
+              -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+              -H "Content-Type: application/json" \
+              --data-binary @feed.json \
+              "${SITE}/api/cron/appstore?chart=${chart}"
+            echo
+          done

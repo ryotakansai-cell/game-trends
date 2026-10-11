@@ -107,6 +107,17 @@ for (const [name, type] of [
   }
 }
 
+// 2026-10-11 追加：ゲームの開発元（App Store のランキングで出す）。
+// App Store は Apple が Cloudflare からの読み取りを拒否するので、GitHub Actions が取って
+// play_titles / play_snapshots に保存し、ページは DB から読む。そのとき開発元も残す
+const titleColumns = (
+  await db.execute("PRAGMA table_info(play_titles)")
+).rows.map((r) => r.name);
+if (!titleColumns.includes("developer")) {
+  await db.execute("ALTER TABLE play_titles ADD COLUMN developer TEXT");
+  console.log("play_titles に developer を足しました");
+}
+
 // 監視リストの初期値を、これまでの記録から作る（既に行があれば何もしない）
 const { rows } = await db.execute("SELECT COUNT(*) AS n FROM youtube_watch");
 if (Number(rows[0].n) === 0) {
