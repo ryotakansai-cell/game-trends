@@ -68,11 +68,12 @@ app/
 ├── daily/[date]/page.tsx       その日のまとめ（最高同接・前日から伸びた人・長時間配信・見られたゲーム）。ナビは「急上昇」の仲間
 ├── daily/[date]/opengraph-image.tsx  その日の上位3人の OGP 画像
 ├── opengraph-image.tsx         サイト全体の OGP 画像（個別の画像が無いページで使われる）
-├── creators/suggest/route.ts   検索欄の候補の一覧（JSON。上位2,000人。6時間作り置き）
+├── creators/suggest/route.ts   検索欄の候補の一覧（JSON。直近14日の集計＋直近24時間の記録から上位2,000人。6時間作り置き）
 ├── creators/page.tsx           配信者一覧・検索（日本の配信者全体。配信中 / 7日の最高同接 / 7日の配信時間で並べ替え）
 ├── creators/[id]/page.tsx      クリエイター統合ページ（全プラットフォームを1ページに）
 ├── games/page.tsx              ゲームランキングの「総合」（上に「いま話題のゲーム」、下に各プラットフォームの上位5本。単位が違うので順位は混ぜない）
 ├── games/twitch/page.tsx       ゲームランキング（Twitch で見られている順。YouTube側にゲーム判定が無いため。以前は /games だった）
+├── games/kick/page.tsx         ゲームランキング（Kick で見られている順。日本語の上位100配信 / 全世界の上位100配信。雑談・外配信は含まない）
 ├── games/steam/page.tsx        ゲームランキング（Steam で遊ばれている順。24時間前比・Twitch の視聴者数・日本の配信数）
 ├── games/roblox/page.tsx       ゲームランキング（Roblox で遊ばれている順）
 ├── games/appstore/page.tsx     ゲームランキング（App Store の日本のゲーム。セールス / 無料。24時間前からの順位の変化）
