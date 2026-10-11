@@ -5,8 +5,15 @@ import type { BuzzItem } from "@/lib/game-buzz";
 /** ゲームの「総合」ページの一番上に出す「いま話題のゲーム」。
  *  ランキングだけ見たい人の邪魔にならないよう、高さは1列ぶんに抑える。
  *  スマホは横に送る帯（縦は画面の4分の1ほど）、PC は5枚を横に並べる。
- *  話題が無いときは呼び出し側で枠ごと出さない */
-export function GameBuzz({ items }: { items: BuzzItem[] }) {
+ *  話題が無いときも枠は出し、「いまは大きな動きはありません」と書く（いつ見ても場所が変わらないように） */
+export function GameBuzz({
+  items,
+  ready,
+}: {
+  items: BuzzItem[];
+  /** 24時間前と比べられたか（false：記録がまだ1日分たまっていない） */
+  ready: boolean;
+}) {
   return (
     <section className="mt-8">
       <h2 className="text-lg font-bold text-white">
@@ -16,15 +23,25 @@ export function GameBuzz({ items }: { items: BuzzItem[] }) {
           24時間前と比べて大きく動いたもの ・ 毎時更新
         </span>
       </h2>
-      {/* スマホ：横に送る帯（-mx-6 px-6 で画面の端まで送れるようにする）。sm 以上：5列に並べる。
+      {items.length === 0 ? (
+        <p className="mt-3 rounded-lg border border-white/10 px-4 py-3 text-sm text-gray-500">
+          {ready
+            ? "いまは大きな動きはありません。"
+            : "24時間前と比べるための記録がたまるまで、もう少しお待ちください。"}
+        </p>
+      ) : (
+        <>
+          {/* スマホ：横に送る帯（-mx-6 px-6 で画面の端まで送れるようにする）。sm 以上：5列に並べる。
           scroll-px-6 が無いと、送ったときに止まる位置が余白を無視して画面の左端にくっつく */}
-      <ul className="-mx-6 mt-3 flex snap-x scroll-px-6 gap-3 overflow-x-auto px-6 pb-2 [scrollbar-width:none] sm:mx-0 sm:grid sm:grid-cols-5 sm:overflow-visible sm:px-0 [&::-webkit-scrollbar]:hidden">
-        {items.map((item) => (
-          <li key={item.key} className="w-36 shrink-0 snap-start sm:w-auto">
-            <Card item={item} />
-          </li>
-        ))}
-      </ul>
+          <ul className="-mx-6 mt-3 flex snap-x scroll-px-6 gap-3 overflow-x-auto px-6 pb-2 [scrollbar-width:none] sm:mx-0 sm:grid sm:grid-cols-5 sm:overflow-visible sm:px-0 [&::-webkit-scrollbar]:hidden">
+            {items.map((item) => (
+              <li key={item.key} className="w-36 shrink-0 snap-start sm:w-auto">
+                <Card item={item} />
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </section>
   );
 }

@@ -47,7 +47,7 @@ export default async function GamesOverviewPage() {
       getPlayRanking("steam", TOP).catch(() => []),
       getPlayRanking("roblox", TOP).catch(() => []),
       getAppStoreRanking("grossing", TOP).catch(() => []),
-      getGameBuzz().catch(() => []),
+      getGameBuzz().catch(() => ({ items: [], ready: true })),
     ]);
 
   const sections: {
@@ -137,8 +137,8 @@ export default async function GamesOverviewPage() {
         filters={<GameTabs current="overview" />}
       />
 
-      {/* 話題が無い時間は枠ごと出さない（無理に並べると、ただの飾りになるため） */}
-      {buzz.length > 0 && <GameBuzz items={buzz} />}
+      {/* 話題が無い時間も枠は出す（中身は「大きな動きはありません」）。無理に小さな動きで埋めない */}
+      <GameBuzz items={buzz.items} ready={buzz.ready} />
 
       <div className="mt-8 grid grid-cols-1 gap-x-12 gap-y-10 md:grid-cols-2">
         {sections.map((s) => (

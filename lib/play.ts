@@ -101,8 +101,8 @@ export type PlayRankingRow = {
   rank: number;
   peakToday: number | null;
   prevRank: number | null;
-  players24hAgo: number | null; // 24時間前に一番近い記録（前後2時間以内）。無ければ null
-  rank24hAgo: number | null; // 同じく24時間前の順位
+  players24hAgo: number | null; // 24時間前（compareHours を渡したらその時間前）に一番近い記録（前後2時間以内）。無ければ null
+  rank24hAgo: number | null; // 同じ時刻の順位
   developer: string | null;
   capturedAt: string;
 };
@@ -114,15 +114,20 @@ export async function getPlayRanking(
   platform: PlayPlatform,
   limit = 50,
   freshHours = 3,
+  // 何時間前と比べるか。ふつうは24時間前。記録が1日分たまっていないあいだ、
+  // 「いま話題のゲーム」（lib/game-buzz.ts）はもっと短い時間で比べる
+  compareHours = 24,
 ): Promise<PlayRankingRow[]> {
   const db = getDbClient();
   const now = Date.now();
   const since = new Date(now - freshHours * 3600 * 1000).toISOString();
-  const pastFrom = new Date(now - 26 * 3600 * 1000).toISOString();
-  const pastTo = new Date(now - 22 * 3600 * 1000).toISOString();
-  // 24時間前に一番近い記録を探す基準。内側の並び替えから外側の列（s.captured_at）は
+  const pastFrom = new Date(
+    now - (compareHours + 2) * 3600 * 1000,
+  ).toISOString();
+  const pastTo = new Date(now - (compareHours - 2) * 3600 * 1000).toISOString();
+  // 比べる時刻に一番近い記録を探す基準。内側の並び替えから外側の列（s.captured_at）は
   // 参照できない（SQLite が受け付けない）ので、値として渡す
-  const target = new Date(now - 24 * 3600 * 1000).toISOString();
+  const target = new Date(now - compareHours * 3600 * 1000).toISOString();
 
   const r = await db.execute({
     sql: `WITH latest AS (
