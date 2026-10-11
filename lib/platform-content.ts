@@ -1,13 +1,14 @@
 // プラットフォームをまたいで同じ形で扱うための「共通の型」だけを置く。
 // 処理は書かない。型だけのファイル。
 //
-// ツイキャスなどを追加するときは、この形に変換する関数を1つ書けば
-// ページ側のコードは一切変更しなくてよい。
+// ツイキャスなどを追加するときは、この形に変換する関数を1つ書き、
+// lib/platform-loaders.ts の LOADERS に登録する。ページ側のコードは変更しなくてよい。
+import type { PlatformId } from "@/lib/platforms";
 
 /** creators に紐付いた1アカウント（accounts テーブルの1行ぶん） */
 export type PlatformAccount = {
   id: number;
-  platform: string; // "twitch" | "youtube" | 将来のもの
+  platform: PlatformId;
   platform_id: string; // そのプラットフォーム内でのID
   login: string | null; // Twitchのログイン名。YouTubeには無いのでnull
   display_name: string;
@@ -24,7 +25,7 @@ export type ContentItem = {
   thumbnailUrl: string;
 
   // --- どこから来たか（カードのバッジに出す） ---
-  platform: string; // "twitch" | "youtube"
+  platform: PlatformId;
   platformLabel: string; // "Twitch" | "YouTube"
   relation: string; // self / clip / archive
   kindLabel: string; // "クリップ" / "アーカイブ" / "動画"
@@ -48,7 +49,7 @@ export type LiveInfo = {
 /** 1アカウントぶんの中身。プラットフォームが違っても形は同じ */
 export type PlatformContent = {
   accountId: number;
-  platform: string;
+  platform: PlatformId;
   label: string; // 画面に出す名前（"Twitch" / "YouTube"）
   relation: string;
   displayName: string;

@@ -2,6 +2,7 @@ import { unstable_cache } from "next/cache";
 import { getDbClient } from "@/lib/db";
 import { jstDay } from "@/lib/snapshot-range";
 import { JAPAN_FILTER } from "@/lib/daily";
+import { toPlatformId, type PlatformId } from "@/lib/platforms";
 
 // 配信者タブ（/creators）の一覧と検索。
 // 以前は名寄せ済みの98人を固定の順に並べていたが、配信者のページが数千人分に増えたので、
@@ -11,12 +12,12 @@ export type ListSort = "live" | "week" | "hours";
 
 export type ListEntry = {
   key: string; // 名寄せ済みなら creator 単位、それ以外はアカウント単位
-  platform: "twitch" | "youtube"; // 代表のアカウント（アイコンとリンクに使う）
+  platform: PlatformId; // 代表のアカウント（アイコンとリンクに使う）
   platformId: string;
   login: string | null;
   displayName: string;
   creatorId: number | null;
-  platforms: string[]; // 名寄せ済みで両方に記録がある人は ["twitch", "youtube"]
+  platforms: PlatformId[]; // 名寄せ済みで複数の配信元に記録がある人は ["twitch", "youtube"]
   value: number; // 並び順の基準（視聴中の人数・最高同接・配信時間）
 };
 
@@ -29,7 +30,7 @@ function toEntries(rows: Row[], limit: number): ListEntry[] {
   for (const r of rows) {
     const creatorId = r.creator_id === null ? null : Number(r.creator_id);
     const key = creatorId !== null ? `c${creatorId}` : `a${r.id}`;
-    const platform = r.platform === "youtube" ? "youtube" : "twitch";
+    const platform = toPlatformId(r.platform);
     const existing = byPerson.get(key);
     if (existing) {
       if (!existing.platforms.includes(platform))

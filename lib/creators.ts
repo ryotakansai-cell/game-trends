@@ -1,7 +1,7 @@
 import { getDbClient } from "@/lib/db";
-import type { PlatformAccount, PlatformContent } from "@/lib/platform";
-import { getTwitchContent } from "@/lib/twitch";
-import { getYouTubeContent } from "@/lib/youtube";
+import type { PlatformAccount, PlatformContent } from "@/lib/platform-content";
+import { PLATFORM_IDS } from "@/lib/platforms";
+import { LOADERS } from "@/lib/platform-loaders";
 
 export type Creator = {
   id: number;
@@ -41,24 +41,24 @@ export async function getCreatorAccounts(
 }
 
 /** 全アカウントの中身を取りに行く「振り分け役」。
- *  ツイキャスを足すときは、ここに2行足して
- *  lib/twitcasting.ts に getTwitCastingContent を書けばよい。 */
+ *  配信元ごとの取り方は lib/platform-loaders.ts の LOADERS に書いてある */
 export async function getCreatorContents(
   accounts: PlatformAccount[],
 ): Promise<PlatformContent[]> {
-  const twitch = accounts.filter((a) => a.platform === "twitch");
-  const youtube = accounts.filter((a) => a.platform === "youtube");
-
   // プラットフォーム同士は独立しているので同時に取りに行く。
-  // 片方のAPIが落ちてももう片方は表示したいので、それぞれ catch する
-  const [twitchContents, youtubeContents] = await Promise.all([
-    getTwitchContent(twitch).catch(() => []),
-    getYouTubeContent(youtube).catch(() => []),
-  ]);
+  // 1つの API が落ちてもほかは表示したいので、それぞれ catch する
+  const perPlatform = await Promise.all(
+    PLATFORM_IDS.map((p) => {
+      const list = accounts.filter((a) => a.platform === p);
+      return list.length === 0
+        ? Promise.resolve([])
+        : LOADERS[p].contents(list).catch(() => []);
+    }),
+  );
 
   // 上の並列取得で順番が崩れるので、accounts の並び（本人が先）に戻す
   const byAccountId = new Map<number, PlatformContent>();
-  for (const c of [...twitchContents, ...youtubeContents]) {
+  for (const c of perPlatform.flat()) {
     byAccountId.set(c.accountId, c);
   }
   return (

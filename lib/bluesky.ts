@@ -13,8 +13,9 @@
 
 import { getDbClient } from "@/lib/db";
 import { dayTitle, getDailyHeadline } from "@/lib/daily";
-import { formatViewers, getTopStreams } from "@/lib/twitch";
-import { getTopYouTubeLive } from "@/lib/youtube";
+import { formatViewers } from "@/lib/twitch";
+import { PLATFORM_IDS, PLATFORMS } from "@/lib/platforms";
+import { LOADERS } from "@/lib/platform-loaders";
 import { SITE_URL } from "@/lib/site";
 import { jstDay } from "@/lib/snapshot-range";
 
@@ -252,27 +253,21 @@ export async function postDailyRanking(
   );
 }
 
-/** いま見られている配信（日本）の上位5つ。Twitch は API で今の数字、
- *  YouTube は直近の毎時の収集（最大1時間前）から。トップページと同じ組み合わせ */
+/** いま見られている配信（日本）の上位5つ。トップページと同じく、全部の配信元から混ぜて並べる
+ *  （Twitch は API で今の数字、YouTube は直近の毎時の収集＝最大1時間前から） */
 export async function postLiveRanking(
   preview: boolean,
 ): Promise<BlueskyReport> {
-  const [twitch, youtube] = await Promise.all([
-    getTopStreams({ language: "ja", limit: 20 }).catch(() => []),
-    getTopYouTubeLive("jp", 20).catch(() => []),
-  ]);
-  const entries = [
-    ...twitch.map((s) => ({
-      name: s.user_name,
-      viewers: s.viewer_count,
-      platform: "Twitch",
-    })),
-    ...youtube.map((v) => ({
-      name: v.channel_title,
-      viewers: v.viewers,
-      platform: "YouTube",
-    })),
-  ]
+  const lists = await Promise.all(
+    PLATFORM_IDS.map((p) => LOADERS[p].live(true, 20).catch(() => [])),
+  );
+  const entries = lists
+    .flat()
+    .map((e) => ({
+      name: e.channelName,
+      viewers: e.viewers,
+      platform: PLATFORMS[e.platform].label,
+    }))
     .sort((a, b) => b.viewers - a.viewers)
     .slice(0, 5);
   if (entries.length === 0)

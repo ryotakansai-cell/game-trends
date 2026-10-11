@@ -8,8 +8,9 @@ import {
   getCreatorAccounts,
   getCreatorContents,
 } from "@/lib/creators";
-import { relationLabel } from "@/lib/platform";
-import type { ContentItem, PlatformAccount } from "@/lib/platform";
+import { relationLabel } from "@/lib/platform-content";
+import type { ContentItem, PlatformAccount } from "@/lib/platform-content";
+import { PLATFORMS } from "@/lib/platforms";
 import { SegmentedTabs } from "@/components/SegmentedTabs";
 import { StreamStats } from "@/components/StreamStats";
 import { DayStreams } from "@/components/DayStreams";
@@ -176,7 +177,7 @@ function ItemCard({
           />
           <span
             className={`absolute left-1.5 top-1.5 rounded px-1.5 py-0.5 text-[10px] font-bold text-white sm:left-2 sm:top-2 sm:px-2 sm:text-xs ${
-              item.platform === "twitch" ? "bg-purple-700/90" : "bg-red-700/90"
+              PLATFORMS[item.platform].badgeClass
             }`}
           >
             {item.platformLabel}

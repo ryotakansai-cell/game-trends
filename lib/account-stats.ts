@@ -1,6 +1,7 @@
 import { getDbClient } from "@/lib/db";
 import { jstDay } from "@/lib/snapshot-range";
 import { JAPAN_FILTER } from "@/lib/daily";
+import { PLATFORMS, toPlatformId, type PlatformId } from "@/lib/platforms";
 
 /** グラフの1日分。配信しなかった日は peak = 0 */
 export type DayPoint = {
@@ -68,16 +69,13 @@ export async function getAccountInfo(
  *  名寄せ済みの人は統合ページ（/creators/[id]）が載るので、同じ人を二重に載せない。
  *  Twitch は日本語の配信者、YouTube は日本向けの検索で見つかった監視リストのチャンネルに絞る */
 export async function getTopUnlinkedAccounts(
-  platform: "twitch" | "youtube",
+  platform: PlatformId,
   limit: number,
   days = 14,
 ): Promise<{ platformId: string; login: string | null }[]> {
   const db = getDbClient();
   const since = jstDay(new Date(Date.now() - days * 24 * 3600 * 1000));
-  const filter =
-    platform === "twitch"
-      ? "a.language = 'ja'"
-      : "a.id IN (SELECT account_id FROM youtube_watch)";
+  const filter = PLATFORMS[platform].japanAccountSql;
   const r = await db.execute({
     sql: `SELECT a.platform_id, a.login, SUM(d.hours_live) AS hours
           FROM daily_stats d
@@ -324,8 +322,7 @@ export async function getSameGameStreamers(
     args: [since, gameId, ...excludeAccountIds, limit],
   });
   return r.rows.map((row) => ({
-    platform:
-      row.platform === "youtube" ? ("youtube" as const) : ("twitch" as const),
+    platform: toPlatformId(row.platform),
     platformId: String(row.platform_id),
     login: row.login ? String(row.login) : null,
     creatorId: row.creator_id === null ? null : Number(row.creator_id),

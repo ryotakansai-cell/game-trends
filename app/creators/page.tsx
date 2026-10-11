@@ -3,15 +3,16 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/PageHeader";
 import { FilterPills } from "@/components/FilterPills";
-import { TwitchIcon, YouTubeIcon } from "@/components/PlatformIcons";
+import { PlatformIcon } from "@/components/PlatformIcons";
 import {
   getStreamerList,
   searchStreamers,
   type ListEntry,
   type ListSort,
 } from "@/lib/streamer-list";
-import { getUsersByLogin, formatViewers } from "@/lib/twitch";
-import { getChannelIcons } from "@/lib/youtube";
+import { formatViewers } from "@/lib/twitch";
+import { PLATFORM_IDS, accountHref, accountKey } from "@/lib/platforms";
+import { getAccountIcons } from "@/lib/platform-loaders";
 
 export const metadata: Metadata = {
   title: "配信者一覧・検索",
@@ -39,13 +40,6 @@ const SORTS: { value: ListSort; label: string; unit: (v: number) => string }[] =
     { value: "hours", label: "7日の配信時間", unit: (v) => `${v}時間` },
   ];
 
-function entryHref(e: ListEntry) {
-  if (e.creatorId !== null) return `/creators/${e.creatorId}`;
-  return e.platform === "twitch"
-    ? `/streamers/${e.login}`
-    : `/youtube/${e.platformId}`;
-}
-
 export default async function CreatorsPage({ searchParams }: Props) {
   const { q, sort } = await searchParams;
   const query = q?.trim().slice(0, 50) ?? "";
@@ -56,20 +50,8 @@ export default async function CreatorsPage({ searchParams }: Props) {
     : await getStreamerList(current.value);
 
   // アイコンは代表のアカウントから。Twitch は100人まで1回、YouTube は50件で1ユニット（1日作り置き）
-  const [twitchUsers, youtubeIcons] = await Promise.all([
-    getUsersByLogin(
-      entries
-        .filter((e) => e.platform === "twitch" && e.login)
-        .map((e) => e.login!),
-    ).catch(() => new Map()),
-    getChannelIcons(
-      entries.filter((e) => e.platform === "youtube").map((e) => e.platformId),
-    ).catch(() => new Map<string, string>()),
-  ]);
-  const iconOf = (e: ListEntry) =>
-    e.platform === "twitch"
-      ? twitchUsers.get(e.login ?? "")?.profile_image_url
-      : youtubeIcons.get(e.platformId);
+  const icons = await getAccountIcons(entries);
+  const iconOf = (e: ListEntry) => icons.get(accountKey(e));
 
   return (
     <main className="mx-auto w-full max-w-6xl px-6 py-6 sm:py-12">
@@ -136,7 +118,7 @@ export default async function CreatorsPage({ searchParams }: Props) {
             return (
               <li key={e.key}>
                 <Link
-                  href={entryHref(e)}
+                  href={accountHref(e)}
                   className="group flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 p-3 transition hover:border-purple-400/50"
                 >
                   {!query && (
@@ -168,8 +150,11 @@ export default async function CreatorsPage({ searchParams }: Props) {
                         {e.displayName}
                       </span>
                       <span className="flex shrink-0 gap-1 text-gray-500">
-                        {e.platforms.includes("twitch") && <TwitchIcon />}
-                        {e.platforms.includes("youtube") && <YouTubeIcon />}
+                        {PLATFORM_IDS.filter((p) =>
+                          e.platforms.includes(p),
+                        ).map((p) => (
+                          <PlatformIcon key={p} platform={p} />
+                        ))}
                       </span>
                     </p>
                     <p className="mt-0.5 text-xs text-gray-500">

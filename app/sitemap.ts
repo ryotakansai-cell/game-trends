@@ -4,6 +4,7 @@ import { getTopGames, isRealGame } from "@/lib/twitch";
 import { getTopUnlinkedAccounts } from "@/lib/account-stats";
 import { getDayRange, shiftDay } from "@/lib/daily";
 import { SITE_URL } from "@/lib/site";
+import { PLATFORM_IDS, PLATFORMS } from "@/lib/platforms";
 
 // sitemap.xml を自動生成する。
 // 検索エンジンに「このサイトにはどんなURLがあるか」を一覧で渡す仕組み。
@@ -13,11 +14,6 @@ import { SITE_URL } from "@/lib/site";
 // 1日1回作り直す。配信者の一覧は日ごとの集計（daily_stats）を14日分読むので
 // （約8万行）、1時間ごとだと Turso の読み取り枠を月6,000万行近く使ってしまう
 export const revalidate = 86400;
-
-// 配信者ページは数千人分あるので、直近の配信時間が長い順に上位だけ載せる。
-// 全員を載せても、配信の少ない人のページは検索で来る人がほぼいない
-const TWITCH_STREAMERS = 500;
-const YOUTUBE_CHANNELS = 200;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date();
@@ -110,25 +106,29 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // Twitch APIが落ちていてもsitemap自体は返す
   }
 
-  // 名寄せしていない配信者のページ（Twitch / YouTube）。
+  // 名寄せしていない配信者のページ（配信元ごとのページ）。
   // DB が読めなくても sitemap 自体は返す
   let streamerPages: MetadataRoute.Sitemap = [];
   try {
-    const [twitch, youtube] = await Promise.all([
-      getTopUnlinkedAccounts("twitch", TWITCH_STREAMERS),
-      getTopUnlinkedAccounts("youtube", YOUTUBE_CHANNELS),
-    ]);
-    streamerPages = [
-      ...twitch
-        .filter((a) => a.login)
-        .map((a) => `${SITE_URL}/streamers/${a.login}`),
-      ...youtube.map((a) => `${SITE_URL}/youtube/${a.platformId}`),
-    ].map((url) => ({
-      url,
-      lastModified: now,
-      changeFrequency: "daily" as const,
-      priority: 0.6,
-    }));
+    const perPlatform = await Promise.all(
+      PLATFORM_IDS.map(async (platform) =>
+        (
+          await getTopUnlinkedAccounts(
+            platform,
+            PLATFORMS[platform].sitemapAccounts,
+          )
+        ).map((a) => ({ ...a, platform })),
+      ),
+    );
+    streamerPages = perPlatform
+      .flat()
+      .map((a) => `${SITE_URL}${PLATFORMS[a.platform].accountPath(a)}`)
+      .map((url) => ({
+        url,
+        lastModified: now,
+        changeFrequency: "daily" as const,
+        priority: 0.6,
+      }));
   } catch {
     // DBに繋がらないときは静かに諦める
   }
