@@ -1,9 +1,13 @@
 import { FilterPills } from "@/components/FilterPills";
 
-export type GameTab = "twitch" | "steam" | "roblox" | "appstore" | "ratio";
+export type GameTab =
+  "overview" | "twitch" | "steam" | "roblox" | "appstore" | "ratio";
 
 const TABS: { value: GameTab; label: string; href: string }[] = [
-  { value: "twitch", label: "Twitch", href: "/games" },
+  // 各プラットフォームの上位5本を並べた入口。単位の違う数字（視聴者数・遊んでいる人数・売上の順位）は
+  // 1つの順位に混ぜられないので、合算した順位ではなく並べるだけにしている
+  { value: "overview", label: "総合", href: "/games" },
+  { value: "twitch", label: "Twitch", href: "/games/twitch" },
   { value: "steam", label: "Steam", href: "/games/steam" },
   { value: "roblox", label: "Roblox", href: "/games/roblox" },
   { value: "appstore", label: "App Store", href: "/games/appstore" },

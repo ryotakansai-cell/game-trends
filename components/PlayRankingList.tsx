@@ -14,8 +14,9 @@ export type PlayListItem = {
   extra?: React.ReactNode; // 2行目（Twitch の視聴者数など）
 };
 
-/** 先週の順位からの変化。矢印は方向そのものを表すので使う（サイトの決まりで「リンクの印」には使わない） */
-function RankChange({
+/** 前の順位からの変化（Steam は先週、App Store は24時間前）。
+ *  矢印は方向そのものを表すので使う（サイトの決まりで「リンクの印」には使わない） */
+export function RankChange({
   rank,
   prevRank,
 }: {
