@@ -2,11 +2,10 @@ name: App Store ランキング収集
 
 # Apple は Cloudflare のサーバーからの RSS の読み取りを不安定に拒否するので、
 # GitHub の回線で RSS を取り、サイトの /api/cron/appstore に送って保存してもらう（lib/appstore.ts）。
-# GitHub の schedule は混雑時に数時間飛ばされることがあるが、App Store の順位は
-# 1時間単位で追う必要はないので許容している（ページは12時間以内の記録なら出す）
+# 動かすのは cron-worker（毎時8分。cron-worker/src/index.ts）。GitHub の鍵（Actions だけを動かせるもの）で
+# workflow_dispatch を呼ぶ。GitHub 自身の schedule は毎時のはずが4〜5時間おきにしか動かなかったので外した
+# （2026-10-12 に実行履歴で確認）。鍵の期限は 2027-10-12。切れたら作り直して cron-worker に入れ直す
 on:
-  schedule:
-    - cron: "17 * * * *"
   workflow_dispatch:
 
 env:
