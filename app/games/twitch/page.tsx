@@ -27,7 +27,14 @@ export default async function TwitchGamesPage() {
     getViewerCountByGame(5),
   ]);
 
-  const games = all.filter(isRealGame).slice(0, 24);
+  // Twitch が返す順ではなく、画面に出す視聴者数の多い順に並べる（返す順のままだと、
+  // 5.4万人のゲームが3.7万人のゲームの下に出ることがあった。2026-10-12）
+  const games = all
+    .filter(isRealGame)
+    .sort(
+      (a, b) => (viewerCounts.get(b.id) ?? 0) - (viewerCounts.get(a.id) ?? 0),
+    )
+    .slice(0, 24);
   const total = games.reduce(
     (sum, g) => sum + (viewerCounts.get(g.id) ?? 0),
     0,
