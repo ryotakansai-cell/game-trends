@@ -331,10 +331,13 @@ Twitch 側の Counter-Strike と Dota 2 は IGDB の ID が空なので手で対
 
 App Store の順位は、Apple が Cloudflare のサーバーからの RSS の読み取りを不安定に拒否する
 （2026-10-11。ブラウザの User-Agent を付けても通ったり通らなかったり）ため、GitHub Actions
-（`.github/workflows/appstore.yml`、毎時17分）が GitHub の回線で RSS を取り、`/api/cron/appstore` に
+（`.github/workflows/appstore.yml`）が GitHub の回線で RSS を取り、`/api/cron/appstore` に
 POST で送って保存する。保存先は Steam・Roblox と同じ `play_titles` / `play_snapshots`
 （platform は `appstore_grossing` / `appstore_free`、人数は NULL で順位だけ、開発元は `play_titles.developer`）。
-GitHub の schedule は数時間遅れることがあるので、ページは12時間以内の記録なら出す。
+ワークフローは cron-worker が毎時8分に GitHub の API（workflow_dispatch）で動かす。GitHub 自身の schedule は
+4〜5時間おきにしか動かなかったので外した。鍵は cron-worker の Secret `GITHUB_TOKEN`（Actions の読み書きだけ・
+game-trends だけに使える。期限 2027-10-12。切れたら作り直して入れ直す。無いあいだは App Store の収集が止まる）。
+ページは12時間以内の記録なら出す。
 サイトの URL は Secret ではなく workflow に直接書いた（GitHub の `SITE_URL` は旧 Vercel のままかもしれないため）。
 
 ゲームの画像はプラットフォームをまたいで URL だけ持ち、毎日マスタで上書きする（画像ファイルは保存しない）。
