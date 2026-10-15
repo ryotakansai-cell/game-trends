@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import { getDbClient } from "@/lib/db";
 import type { PlatformAccount, PlatformContent } from "@/lib/platform-content";
 import { PLATFORM_IDS } from "@/lib/platforms";
@@ -116,6 +117,26 @@ export async function getCreators(limit = 100): Promise<CreatorSummary[]> {
   }));
 }
 
+// 名寄せ済みのアカウント（約300件）を丸ごと1時間作り置きする。
+// トップ・急上昇・ゲームの詳細を開くたびに、出ている配信者の分だけ DB に聞いていたが、
+// 名寄せは手で確定したときしか変わらない。全件でも creator_id の索引で約300行なので、1時間に1回まとめて読む。
+// そのため links:confirm などで名寄せを変えると、ランキングのリンクに出るまで最大1時間かかる
+const getLinkedAccounts = unstable_cache(
+  async (): Promise<[string, number][]> => {
+    const result = await getDbClient().execute(`
+      SELECT platform, platform_id, creator_id
+      FROM accounts INDEXED BY idx_accounts_creator
+      WHERE creator_id IS NOT NULL
+    `);
+    return result.rows.map((r) => [
+      `${r.platform}:${r.platform_id}`,
+      Number(r.creator_id),
+    ]);
+  },
+  ["linked-accounts"],
+  { revalidate: 3600 },
+);
+
 /** ランキングのアイコンの飛び先を決めるための対応表。
  *  "twitch:123456" や "youtube:UCxxxx" を鍵に creator_id を引ける Map を返す。
  *  名寄せしていない配信者は入らないので、呼び出し側で従来のリンクに切り替える */
@@ -125,27 +146,11 @@ export async function getCreatorIdMap(
   const map = new Map<string, number>();
   if (keys.length === 0) return map;
 
-  const db = getDbClient();
-  // 同じIDが重複して届くことがあるので Set で一意にする
-  const ids = [...new Set(keys.map((k) => k.platformId))];
-  const platforms = [...new Set(keys.map((k) => k.platform))];
-  const marks = (xs: string[]) => xs.map(() => "?").join(",");
-
-  // platform も条件に入れると (platform, platform_id) の一意の索引で1件ずつ引ける。
-  // platform_id だけだと索引が使えず、アカウントの表（3万行以上）を毎回全部読んでいた
-  const result = await db.execute({
-    sql: `
-      SELECT platform, platform_id, creator_id
-      FROM accounts
-      WHERE platform IN (${marks(platforms)})
-        AND platform_id IN (${marks(ids)})
-        AND creator_id IS NOT NULL
-    `,
-    args: [...platforms, ...ids],
-  });
-
-  for (const r of result.rows) {
-    map.set(`${r.platform}:${r.platform_id}`, Number(r.creator_id));
+  const linked = new Map(await getLinkedAccounts());
+  for (const k of keys) {
+    const key = `${k.platform}:${k.platformId}`;
+    const creatorId = linked.get(key);
+    if (creatorId !== undefined) map.set(key, creatorId);
   }
   return map;
 }

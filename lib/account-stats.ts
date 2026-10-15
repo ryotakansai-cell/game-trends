@@ -1,6 +1,7 @@
+import { unstable_cache } from "next/cache";
 import { getDbClient } from "@/lib/db";
 import { jstDay } from "@/lib/snapshot-range";
-import { JAPAN_FILTER } from "@/lib/daily";
+import { JAPAN_FILTER, getDayRange } from "@/lib/daily";
 import { PLATFORMS, toPlatformId, type PlatformId } from "@/lib/platforms";
 
 /** グラフの1日分。配信しなかった日は peak = 0 */
@@ -298,16 +299,9 @@ export async function getHourHeatmap(
 
 /** 同じゲームを直近7日に配信していた日本の配信者（最高同接の大きい順）。
  *  日ごとの集計の「その日一番遊んだゲーム」で見るので、少しだけ遊んだ人は入らない */
-export async function getSameGameStreamers(
-  gameId: string,
-  excludeAccountIds: number[],
-  limit = 6,
-) {
+async function querySameGame(gameId: string, limit: number) {
   const db = getDbClient();
   const since = jstDay(new Date(Date.now() - 7 * 24 * 3600 * 1000));
-  const exclude = excludeAccountIds.length
-    ? `AND a.id NOT IN (${excludeAccountIds.map(() => "?").join(",")})`
-    : "";
   const r = await db.execute({
     sql: `SELECT a.id, a.platform, a.platform_id, a.login, a.creator_id,
                  COALESCE(c.display_name, a.display_name) AS name,
@@ -315,13 +309,14 @@ export async function getSameGameStreamers(
           FROM daily_stats d
           JOIN accounts a ON a.id = d.account_id
           LEFT JOIN creators c ON c.id = a.creator_id
-          WHERE d.day >= ? AND d.top_game_id = ? ${exclude} AND ${JAPAN_FILTER}
+          WHERE d.day >= ? AND d.top_game_id = ? AND ${JAPAN_FILTER}
           GROUP BY a.id
-          ORDER BY peak DESC
+          ORDER BY peak DESC, a.id
           LIMIT ?`,
-    args: [since, gameId, ...excludeAccountIds, limit],
+    args: [since, gameId, limit],
   });
   return r.rows.map((row) => ({
+    accountId: Number(row.id),
     platform: toPlatformId(row.platform),
     platformId: String(row.platform_id),
     login: row.login ? String(row.login) : null,
@@ -329,4 +324,28 @@ export async function getSameGameStreamers(
     displayName: String(row.name),
     peakViewers: Number(row.peak),
   }));
+}
+
+// 「同じゲームの人」は日ごとの集計から作るので、毎朝の集計で1日1回しか変わらない。
+// 以前は配信者ページを開くたびに読んでいた（1回約3,300行。検索エンジンの巡回でも読む）。
+// ページごとに「本人を除く」が違うので、作り置きはゲームごとに上位を多めに持ち、本人を除くのはここでやる。
+// こうすると、同じゲームの配信者のページどうしで1つの作り置きを使い回せる。
+// 鍵には「集計がある最新の日」を入れ、新しい日の集計が入ったときだけ作り直す（lib/streamer-list.ts と同じ）
+const SAME_GAME_POOL = 20;
+const cachedSameGame = unstable_cache(
+  (gameId: string, _lastDay: string) => querySameGame(gameId, SAME_GAME_POOL),
+  ["same-game"],
+  { revalidate: 86400 },
+);
+
+export async function getSameGameStreamers(
+  gameId: string,
+  excludeAccountIds: number[],
+  limit = 6,
+) {
+  const lastDay = (await getDayRange())?.last ?? "";
+  const exclude = new Set(excludeAccountIds);
+  return (await cachedSameGame(gameId, lastDay))
+    .filter((r) => !exclude.has(r.accountId))
+    .slice(0, limit);
 }
