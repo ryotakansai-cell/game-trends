@@ -1,7 +1,7 @@
 import { unstable_cache } from "next/cache";
 import { getDbClient } from "@/lib/db";
 import { jstDay } from "@/lib/snapshot-range";
-import { JAPAN_FILTER } from "@/lib/daily";
+import { JAPAN_FILTER, getDayRange } from "@/lib/daily";
 import { toPlatformId, type PlatformId } from "@/lib/platforms";
 
 // 配信者タブ（/creators）の一覧と検索。
@@ -59,12 +59,14 @@ async function queryList(sort: ListSort, limit: number) {
 
   if (sort === "live") {
     // 最後の収集で配信中だった人（Twitch・YouTube それぞれの最新の時刻）。
-    // 2時間より前の記録は読まない（captured_at の索引で範囲を絞る）
+    // 2時間より前の記録は読まない（captured_at の索引で範囲を絞る）。
+    // CROSS JOIN は「live_snapshots から読め」という指示。普通の JOIN だと SQLite が
+    // アカウントの表（3万行以上）から読み始め、範囲で絞れていなかった（lib/rising.ts と同じ）
     const since = new Date(Date.now() - 2 * 3600 * 1000).toISOString();
     const r = await db.execute({
       sql: `WITH recent AS (
               SELECT s.account_id, s.viewers, s.captured_at, a.platform
-              FROM live_snapshots s JOIN accounts a ON a.id = s.account_id
+              FROM live_snapshots s CROSS JOIN accounts a ON a.id = s.account_id
               WHERE s.captured_at >= ?
             ),
             latest AS (SELECT platform, MAX(captured_at) AS at FROM recent GROUP BY platform)
@@ -99,17 +101,41 @@ async function queryList(sort: ListSort, limit: number) {
   return toEntries(r.rows, limit);
 }
 
-/** 並び順ごとの一覧。開かれるたびに7日分の集計（約5万行）を読まないよう、
- *  結果を5分作り置きする（並び順ごとに別々に保存される。引数も作り置きの見分けに使われるため） */
-export const getStreamerList = unstable_cache(
-  async (sort: ListSort, limit = 60) => queryList(sort, limit),
-  ["streamer-list"],
-  { revalidate: 300 },
+// 「配信中」は4つの配信元の毎時の収集（13・23・38・48分）で変わるので、15分作り置きする
+const cachedLiveList = unstable_cache(
+  async (limit: number) => queryList("live", limit),
+  ["streamer-list-live"],
+  { revalidate: 900 },
 );
 
+// 「直近7日」の2つは日ごとの集計（daily_stats）から作るので、毎朝の集計で1日1回しか変わらない。
+// 以前は5分作り置きで、作り直すたびに7日分の集計（1回約10万行）を読んでいた。
+// 鍵に「集計がある最新の日」を入れ、新しい日の集計が入ったときだけ作り直す
+// （最新の日を調べるのは day の索引の端の1行を読むだけ。lib/daily.ts の getDayRange）
+const cachedWeekList = unstable_cache(
+  async (sort: ListSort, limit: number, _lastDay: string) =>
+    queryList(sort, limit),
+  ["streamer-list-week"],
+  { revalidate: 86400 },
+);
+
+/** 並び順ごとの一覧（並び順ごとに別々に作り置きされる。引数も作り置きの見分けに使われるため） */
+export async function getStreamerList(sort: ListSort, limit = 60) {
+  if (sort === "live") return cachedLiveList(limit);
+  const lastDay = (await getDayRange())?.last ?? "";
+  return cachedWeekList(sort, limit, lastDay);
+}
+
 /** 名前・ログイン名で探す。対象は日本の配信者（日付ページと同じ条件）。
- *  結果は直近7日の最高同接が大きい順（記録が無い人は後ろ） */
-export async function searchStreamers(q: string, limit = 40) {
+ *  結果は直近7日の最高同接が大きい順（記録が無い人は後ろ）。
+ *  LIKE "%…%" は索引が使えずアカウントの表を全部読む（1回約5万行）ので、同じ言葉の検索は1時間作り置きする */
+export const searchStreamers = unstable_cache(
+  async (q: string, limit = 40) => querySearch(q, limit),
+  ["streamer-search"],
+  { revalidate: 3600 },
+);
+
+async function querySearch(q: string, limit: number) {
   const db = getDbClient();
   // LIKE の特別な文字（% と _）は、そのままの文字として探す
   const pattern = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
@@ -141,11 +167,16 @@ export async function getSuggestEntries(limit = 2000) {
   const sinceDay = jstDay(new Date(Date.now() - 14 * 24 * 3600 * 1000));
   const since24h = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
   const r = await db.execute({
+    // INDEXED BY は「この索引で読め」という指示。付けないと SQLite は GROUP BY account_id の
+    // 並べ替えを省くためにアカウント順の索引を選び、日付・時刻で絞らずに両方の表を全部読んでいた
+    // （2026-10-15 の実測で1回58万行 → 33万行。残りは14日分の集計そのもの）
     sql: `WITH peaks AS (
-            SELECT account_id, MAX(peak_viewers) AS v FROM daily_stats
+            SELECT account_id, MAX(peak_viewers) AS v
+            FROM daily_stats INDEXED BY idx_daily_stats_day
             WHERE day >= ? GROUP BY account_id
             UNION ALL
-            SELECT account_id, MAX(viewers) AS v FROM live_snapshots
+            SELECT account_id, MAX(viewers) AS v
+            FROM live_snapshots INDEXED BY idx_live_snapshots_time
             WHERE captured_at >= ? GROUP BY account_id
           ),
           best AS (SELECT account_id, MAX(v) AS v FROM peaks GROUP BY account_id)

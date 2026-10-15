@@ -63,7 +63,8 @@ export async function GET(request: NextRequest) {
         FROM youtube_watch w JOIN accounts a ON a.id = w.account_id
         WHERE w.seen_days >= 2 AND w.last_live_at >= ?
         UNION
-        SELECT platform_id FROM accounts
+        -- creator_id の索引で名寄せ済みの人だけを引く（cron/snapshot と同じ理由）
+        SELECT platform_id FROM accounts INDEXED BY idx_accounts_creator
         WHERE platform = 'youtube' AND relation = 'self' AND creator_id IS NOT NULL
       `,
       args: [watchSince],
@@ -79,8 +80,11 @@ export async function GET(request: NextRequest) {
     for (let i = 0; i < feedIds.length; i += 500) {
       const chunk = feedIds.slice(i, i + 500);
       const r = await db.execute({
+        // +status は「status の索引を使わない」という指示。(status, checked_at) の索引を足したら、
+        // SQLite が動画IDの主キーで引く代わりに status='done' の全件（約2万行）を読むようになった
+        // （2026-10-15 の実測で500件の照合が 1,000行 → 19,651行）
         sql: `SELECT video_id FROM youtube_video_checks
-              WHERE status = 'done' AND video_id IN (${chunk.map(() => "?").join(",")})`,
+              WHERE +status = 'done' AND video_id IN (${chunk.map(() => "?").join(",")})`,
         args: chunk,
       });
       r.rows.forEach((row) => done.add(String(row.video_id)));

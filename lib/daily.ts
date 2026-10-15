@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import { getDbClient } from "@/lib/db";
 import { jstDay } from "@/lib/snapshot-range";
 import { toPlatformId, type PlatformId } from "@/lib/platforms";
@@ -51,11 +52,15 @@ export async function isAvailableDay(day: string) {
   return range !== null && day >= range.first && day <= range.last;
 }
 
-/** まとめがある最初の日と最後の日（MIN / MAX は day の索引の端を読むだけなので速い） */
+/** まとめがある最初の日と最後の日。
+ *  MIN と MAX を1つの SELECT に並べると、SQLite の「索引の端を見るだけ」の最適化が効かず
+ *  全行（13万行）を読んでいた（2026-10-15 の実測）。1つずつ別の SELECT にすると、
+ *  day の索引の両端の2行を読むだけで済む */
 export async function getDayRange() {
   const db = getDbClient();
   const r = await db.execute(
-    "SELECT MIN(day) AS first, MAX(day) AS last FROM daily_stats",
+    `SELECT (SELECT MIN(day) FROM daily_stats) AS first,
+            (SELECT MAX(day) FROM daily_stats) AS last`,
   );
   const row = r.rows[0];
   if (!row?.first) return null;
@@ -100,7 +105,7 @@ const ENTRY_COLUMNS = `
 
 /** その日1日のまとめを作る。読むのは daily_stats のその日と前日（各数千行）と、
  *  ゲームの分だけ毎時の記録の1日分。ページは1日作り置きするので、読む回数は少ない */
-export async function getDailySummary(day: string): Promise<DailySummary> {
+async function queryDailySummary(day: string): Promise<DailySummary> {
   const db = getDbClient();
   const prev = previousDay(day);
   const from = new Date(`${day}T00:00:00+09:00`).toISOString();
@@ -189,6 +194,26 @@ export async function getDailySummary(day: string): Promise<DailySummary> {
     })),
     streamers: Number(count.rows[0]?.n ?? 0),
   };
+}
+
+// まとめは1回で約30万行を読む（ゲームの欄は毎時の記録の1日分）。ページは1日作り置きだが、
+// 日付ページは毎日増えて検索エンジンにも巡回されるので、作り直すたびに読んでいた。
+// 集計は翌朝にもう一度まとめ直す（lib/daily-stats.ts の rollupPendingDays）ので、直近2日は変わりうる。
+// それより前の日は内容が変わらないので長く作り置きする
+const cachedFinalSummary = unstable_cache(
+  queryDailySummary,
+  ["daily-summary-final"],
+  { revalidate: 30 * 86400 },
+);
+const cachedRecentSummary = unstable_cache(
+  queryDailySummary,
+  ["daily-summary-recent"],
+  { revalidate: 3600 },
+);
+
+export function getDailySummary(day: string): Promise<DailySummary> {
+  const twoDaysAgo = jstDay(new Date(Date.now() - 2 * 24 * 3600 * 1000));
+  return day < twoDaysAgo ? cachedFinalSummary(day) : cachedRecentSummary(day);
 }
 
 /** OGP 画像用の軽い版。最高同接の上位 n 人と、配信者の数だけ。

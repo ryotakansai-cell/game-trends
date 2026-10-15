@@ -11,7 +11,9 @@
 type Job = { path: string } | { githubWorkflow: string };
 
 // cron式（wrangler.jsonc の triggers.crons）→ その時刻にやる仕事。
-// 時刻をずらしているのは、同時に走らせてサイト側の処理が重ならないようにするため
+// 時刻をずらしているのは、同時に走らせてサイト側の処理が重ならないようにするため。
+// 配信の収集の時刻を変えたら、サイト側の lib/platforms.ts の snapshotMinute も合わせる
+// （急上昇などの作り置きを、収集が終わった頃に切り替えるのに使っている）
 const JOBS: Record<string, Job[]> = {
   "23 * * * *": [{ path: "/api/cron/snapshot" }],
   "38 * * * *": [{ path: "/api/cron/youtube-snapshot" }],

@@ -56,6 +56,9 @@ type PlatformInfo = {
   liveUpdate: string;
   /** 急上昇の設定。毎時の記録が飛び飛びの配信元は、24時間前の記録を探す幅を広げる */
   rising: { windowHours: number; minViewers: number };
+  /** 毎時何分に収集するか（cron-worker/src/index.ts の JOBS と合わせる）。
+   *  毎時の記録から作る結果の作り置きを、次の収集が終わった頃に切り替えるのに使う（lib/snapshot-range.ts の captureHour） */
+  snapshotMinute: number;
   /** 配信者ページの動画カードに付ける印の色 */
   badgeClass: string;
   /** sitemap に載せる配信者の数（名寄せしていない人を、直近の配信時間が長い順に）。
@@ -82,6 +85,7 @@ export const PLATFORMS: Record<PlatformId, PlatformInfo> = {
     liveUpdate: "5分ごと",
     // 日本語の配信は10人以上も記録しているので、小さな配信の上下動で埋まらないよう絞る
     rising: { windowHours: 3, minViewers: 200 },
+    snapshotMinute: 23,
     badgeClass: "bg-purple-700/90",
     sitemapAccounts: 500,
   },
@@ -106,6 +110,7 @@ export const PLATFORMS: Record<PlatformId, PlatformInfo> = {
     // キーワードの入れ替えで記録が飛び飛びになるので、24時間前の記録を前後6時間から探す。
     // 11人規模から収集できているので広めに拾う
     rising: { windowHours: 6, minViewers: 50 },
+    snapshotMinute: 38,
     badgeClass: "bg-red-700/90",
     sitemapAccounts: 200,
   },
@@ -128,6 +133,7 @@ export const PLATFORMS: Record<PlatformId, PlatformInfo> = {
     liveUpdate: "5分ごと",
     // 視聴者の数が Twitch より一桁小さいので、最低ラインも下げる
     rising: { windowHours: 3, minViewers: 30 },
+    snapshotMinute: 48,
     badgeClass: "bg-sky-700/90",
     sitemapAccounts: 100,
   },
@@ -152,6 +158,7 @@ export const PLATFORMS: Record<PlatformId, PlatformInfo> = {
     liveUpdate: "5分ごと",
     // 日本の配信の規模は Twitch の日本に近い（2026-10-11 の実測で最高1.1万人）ので、最低ラインも近くする
     rising: { windowHours: 3, minViewers: 100 },
+    snapshotMinute: 13,
     badgeClass: "bg-green-700/90",
     sitemapAccounts: 100,
   },

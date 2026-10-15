@@ -85,6 +85,12 @@ await db.batch(
       status     TEXT NOT NULL,  -- 'done' / 'pending'
       checked_at TEXT NOT NULL
     )`,
+
+    // 2026-10-15 追加：Turso の読み取り枠（月5億行）の75%を半月で使ったので、重い読み取りに索引を足した。
+    // 配信者ページの「同じゲームを配信している人」。day の索引だけだと7日分（約6万行）を全部読んでいた
+    `CREATE INDEX IF NOT EXISTS idx_daily_stats_game_day ON daily_stats (top_game_id, day)`,
+    // 毎時の YouTube の収集の「配信予定・配信中だった動画」。索引が無く、表（約2万行）を毎時全部読んでいた
+    `CREATE INDEX IF NOT EXISTS idx_video_checks_status ON youtube_video_checks (status, checked_at)`,
   ],
   "write",
 );

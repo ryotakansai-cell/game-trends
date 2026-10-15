@@ -37,11 +37,13 @@ const COMPARE_HOURS = [24];
 
 type GameCount = Map<string, { viewers: number; streams: number }>;
 
-/** その収集回の、日本語の配信のゲームごとの視聴者数と配信数 */
+/** その収集回の、日本語の配信のゲームごとの視聴者数と配信数。
+ *  この節の SQL の CROSS JOIN は「live_snapshots の時刻の索引から読め」という指示
+ *  （普通の JOIN だと Twitch のアカウント2万人以上を1人ずつ見に行っていた。lib/rising.ts と同じ） */
 async function countByGame(at: string): Promise<GameCount> {
   const r = await getDbClient().execute({
     sql: `SELECT l.game_id, SUM(l.viewers) AS v, COUNT(*) AS n
-          FROM live_snapshots l JOIN accounts a ON a.id = l.account_id
+          FROM live_snapshots l CROSS JOIN accounts a ON a.id = l.account_id
           WHERE a.platform = 'twitch' AND a.language = 'ja'
             AND l.captured_at = ? AND l.game_id IS NOT NULL
           GROUP BY l.game_id`,
@@ -59,7 +61,7 @@ async function countByGame(at: string): Promise<GameCount> {
 async function nearestCapture(target: Date): Promise<string | null> {
   const r = await getDbClient().execute({
     sql: `SELECT l.captured_at AS at FROM live_snapshots l
-          JOIN accounts a ON a.id = l.account_id
+          CROSS JOIN accounts a ON a.id = l.account_id
           WHERE a.platform = 'twitch' AND l.captured_at BETWEEN ? AND ?
           GROUP BY l.captured_at
           ORDER BY ABS(strftime('%s', l.captured_at) - strftime('%s', ?))
@@ -81,7 +83,7 @@ const sum = (m: GameCount, key: "viewers" | "streams") =>
 async function twitchSurges(): Promise<BuzzItem[] | null> {
   const latest = await getDbClient().execute(
     `SELECT l.captured_at AS at FROM live_snapshots l
-     JOIN accounts a ON a.id = l.account_id
+     CROSS JOIN accounts a ON a.id = l.account_id
      WHERE a.platform = 'twitch' ORDER BY l.captured_at DESC LIMIT 1`,
   );
   const nowAt = latest.rows[0]?.at ? String(latest.rows[0].at) : null;

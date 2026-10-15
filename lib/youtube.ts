@@ -1,4 +1,7 @@
+import { unstable_cache } from "next/cache";
 import { getDbClient } from "@/lib/db";
+import { captureHour } from "@/lib/snapshot-range";
+import { PLATFORMS } from "@/lib/platforms";
 import type { PlatformAccount, PlatformContent } from "@/lib/platform-content";
 
 const YOUTUBE_API = "https://www.googleapis.com/youtube/v3";
@@ -287,16 +290,18 @@ export async function getChannelIcons(
 }
 
 /** DBに貯めた直近の収集結果から、ランキングを読み出す */
-export async function getTopYouTubeLive(
-  region?: "jp" | "global",
-  limit = 40,
+async function queryTopYouTubeLive(
+  region: "jp" | "global" | undefined,
+  limit: number,
 ): Promise<YouTubeLiveRankingRow[]> {
   const db = getDbClient();
 
   const sql = `
     -- 最新の収集に含まれる YouTube の配信だけを読む。
     -- 最新の時刻は captured_at の索引を新しい順にたどって最初の YouTube の行で止める
-    -- （以前は YouTube の全履歴から MAX を取っていた）
+    -- （以前は YouTube の全履歴から MAX を取っていた）。
+    -- CROSS JOIN は「live_snapshots から読め」という指示。普通の JOIN だと SQLite が
+    -- YouTube のアカウント（5千件以上）を1人ずつ見に行く順を選んでいた（lib/rising.ts と同じ）
     SELECT
       -- 列名は移行前と同じにする（呼び出し側は変更不要）
       l.content_id AS video_id,
@@ -307,12 +312,12 @@ export async function getTopYouTubeLive(
       a.display_name AS channel_title,
       l.captured_at
     FROM live_snapshots l
-    JOIN accounts a ON a.id = l.account_id
+    CROSS JOIN accounts a ON a.id = l.account_id
     WHERE a.platform = 'youtube'
       AND l.captured_at = (
         SELECT l2.captured_at
         FROM live_snapshots l2
-        JOIN accounts a2 ON a2.id = l2.account_id
+        CROSS JOIN accounts a2 ON a2.id = l2.account_id
         WHERE a2.platform = 'youtube'
         ORDER BY l2.captured_at DESC
         LIMIT 1
@@ -324,7 +329,33 @@ export async function getTopYouTubeLive(
   const args = region ? [region, limit] : [limit];
 
   const result = await db.execute({ sql, args });
-  return result.rows as unknown as YouTubeLiveRankingRow[];
+  // 作り置きに入れるので、DB の行の形のままではなく普通のオブジェクトにしておく
+  return result.rows.map((r) => ({
+    video_id: String(r.video_id),
+    title: String(r.title),
+    viewers: Number(r.viewers),
+    region: r.region === "jp" ? "jp" : "global",
+    channel_id: String(r.channel_id),
+    channel_title: String(r.channel_title),
+    captured_at: String(r.captured_at),
+  }));
+}
+
+// トップページは一番開かれるページで、YouTube の分は毎時の記録から作る（中身は1時間に1回しか変わらない）。
+// 急上昇と同じく、YouTube の収集の回を鍵に入れて、収集が終わった頃に作り直す（lib/rising.ts）
+const cachedTopYouTubeLive = unstable_cache(
+  (region: "jp" | "global" | undefined, limit: number, _hour: string) =>
+    queryTopYouTubeLive(region, limit),
+  ["youtube-top-live"],
+  { revalidate: 3600 },
+);
+
+export function getTopYouTubeLive(
+  region?: "jp" | "global",
+  limit = 40,
+): Promise<YouTubeLiveRankingRow[]> {
+  const hour = captureHour(PLATFORMS.youtube.snapshotMinute);
+  return cachedTopYouTubeLive(region, limit, hour);
 }
 
 // ============================================
