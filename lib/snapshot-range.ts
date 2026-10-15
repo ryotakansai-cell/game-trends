@@ -13,6 +13,14 @@ export function jstDay(date = new Date()): string {
   return new Date(date.getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10);
 }
 
+/** 毎時 minute 分に収集する記録の「いまの回」（"2026-10-15T03" の形）。
+ *  作り置き（unstable_cache）の鍵に入れると、収集が終わった頃に鍵が変わって作り直される。
+ *  ただ1時間置くだけだと、収集の直前に作った結果が次の1時間残り、最大2時間前のデータが出てしまう。
+ *  収集には1分ほどかかり、遅れることもあるので、収集の時刻から10分後に切り替える */
+export function captureHour(minute: number, now = Date.now()): string {
+  return new Date(now - (minute + 10) * 60 * 1000).toISOString().slice(0, 13);
+}
+
 export function pastWindow(hours: number): [string, string] {
   const center = Date.now() - 24 * 3600 * 1000;
   return [

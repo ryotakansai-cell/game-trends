@@ -128,16 +128,20 @@ export async function getCreatorIdMap(
   const db = getDbClient();
   // 同じIDが重複して届くことがあるので Set で一意にする
   const ids = [...new Set(keys.map((k) => k.platformId))];
-  const placeholders = ids.map(() => "?").join(",");
+  const platforms = [...new Set(keys.map((k) => k.platform))];
+  const marks = (xs: string[]) => xs.map(() => "?").join(",");
 
+  // platform も条件に入れると (platform, platform_id) の一意の索引で1件ずつ引ける。
+  // platform_id だけだと索引が使えず、アカウントの表（3万行以上）を毎回全部読んでいた
   const result = await db.execute({
     sql: `
       SELECT platform, platform_id, creator_id
       FROM accounts
-      WHERE creator_id IS NOT NULL
-        AND platform_id IN (${placeholders})
+      WHERE platform IN (${marks(platforms)})
+        AND platform_id IN (${marks(ids)})
+        AND creator_id IS NOT NULL
     `,
-    args: ids,
+    args: [...platforms, ...ids],
   });
 
   for (const r of result.rows) {

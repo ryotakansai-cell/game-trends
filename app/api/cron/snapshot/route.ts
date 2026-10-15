@@ -42,7 +42,9 @@ export async function GET(request: NextRequest) {
     // ②' 名寄せ済みの配信者で、上の2つに入っていない人は直接確かめる。
     // 配信の言語を日本語以外にしている人や、10人を割った時間帯も欠けなく記録するため
     const linked = await db.execute(`
-      SELECT platform_id FROM accounts
+      -- 名寄せ済みの人（約100人）だけを creator_id の索引で引く。指定しないと SQLite は
+      -- platform の索引を選び、Twitch のアカウント2万人以上を全部読んでいた（毎時）
+      SELECT platform_id FROM accounts INDEXED BY idx_accounts_creator
       WHERE platform = 'twitch' AND creator_id IS NOT NULL
     `);
     const notCovered = linked.rows

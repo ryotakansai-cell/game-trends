@@ -34,7 +34,8 @@ export async function GET(request: NextRequest) {
 
     // ② 名寄せ済みの人で、①に入っていない人は直接確かめる（人数が少ない時間帯も欠けなく記録するため）
     const linked = await db.execute(`
-      SELECT platform_id FROM accounts
+      -- creator_id の索引で名寄せ済みの人だけを引く（cron/snapshot と同じ理由）
+      SELECT platform_id FROM accounts INDEXED BY idx_accounts_creator
       WHERE platform = 'twitcasting' AND creator_id IS NOT NULL
     `);
     const notCovered = linked.rows
