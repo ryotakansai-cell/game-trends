@@ -216,27 +216,11 @@ export function getDailySummary(day: string): Promise<DailySummary> {
   return day < twoDaysAgo ? cachedFinalSummary(day) : cachedRecentSummary(day);
 }
 
-/** OGP 画像用の軽い版。最高同接の上位 n 人と、配信者の数だけ。
- *  画像は SNS に貼られるたびに作られるので、ページ用の重い集計（ゲームは毎時の記録を約5万行読む）を避ける */
+/** OGP 画像用。最高同接の上位 n 人と、配信者の数だけ。
+ *  以前は画像のためだけに軽い SQL を別に流していた（それでも1回約6万行）。中身はまとめの
+ *  「最高同接の上位20人」「配信者の数」と同じ SQL なので、作り置き済みのまとめから取り出す。
+ *  過去の日はページと画像で1回の読み取りを共有でき、30日間は DB を読まない */
 export async function getDailyHeadline(day: string, n = 3) {
-  const db = getDbClient();
-  const [top, count] = await Promise.all([
-    db.execute({
-      sql: `SELECT ${ENTRY_COLUMNS}
-            FROM daily_stats d JOIN accounts a ON a.id = d.account_id
-            WHERE d.day = ? AND ${JAPAN_FILTER}
-            ORDER BY d.peak_viewers DESC LIMIT ?`,
-      args: [day, n],
-    }),
-    db.execute({
-      sql: `SELECT COUNT(*) AS n
-            FROM daily_stats d JOIN accounts a ON a.id = d.account_id
-            WHERE d.day = ? AND ${JAPAN_FILTER}`,
-      args: [day],
-    }),
-  ]);
-  return {
-    top: top.rows.map(toEntry),
-    streamers: Number(count.rows[0]?.n ?? 0),
-  };
+  const summary = await getDailySummary(day);
+  return { top: summary.topPeak.slice(0, n), streamers: summary.streamers };
 }
