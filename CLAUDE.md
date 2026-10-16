@@ -135,6 +135,7 @@ lib/
 ├── snapshot-range.ts           live_snapshots を時刻の範囲で絞る部品、日本時間の日付
 └── db.ts                       Turso接続（読み書き共通の1関数）と、大量書き込みを500件ずつに分ける部品
 scripts/
+├── make-bluesky-banner.tsx     Bluesky のプロフィールの背景画像（design/bluesky-banner.png）を作る
 ├── db-migrate.mjs              npm run db:migrate（2026-10 以降に足した表を作る。何度実行しても安全）
 ├── test-cron.mjs               ローカル/本番のcronエンドポイントを手軽に叩くテスト用スクリプト
 ├── links-probe.mjs             Twitchのloginをハンドル(@xxx)として引く（1人1ユニット）
@@ -354,6 +355,7 @@ Google Fonts から**画像に使う文字だけを切り出したフォント**
 日付ページの各行には、最高同接だった瞬間の配信タイトル（`peakTitle`）を出す。毎時の記録から、その日一番視聴者が多かった回のタイトルを取る
 （90日より前の日は `daily_stats.main_title` で代わりにする）。数字だけでなく「何の配信が見られたか」を見せるため。
 日付ページは「日本の配信者」に絞る（Twitch は日本語、YouTube は監視リスト、名寄せ済み）。
+ライブのページの見出しの下にも「昨日のまとめ：1位 ◯◯ ◯万人」の1行を置き、日付ページへの入口にしている（以前は急上昇のページにしか無かった）。
 全世界の上位800配信も記録しているので、絞らないと英語圏の大物で埋まるため。
 
 ゲームを「遊んでいる人数」は、配信と同じく「マスタ（`play_titles`）＋毎時の記録（`play_snapshots`）」で持つ

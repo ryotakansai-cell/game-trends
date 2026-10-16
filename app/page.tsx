@@ -14,6 +14,9 @@ import { PlatformFilter } from "@/components/PlatformFilter";
 import { RelativeTime } from "@/components/RelativeTime";
 import { LiveCards, LiveList, type LiveRow } from "@/components/LiveViews";
 import { ViewToggle, type View } from "@/components/ViewToggle";
+import Link from "next/link";
+import { getDayRange, getDailyHeadline } from "@/lib/daily";
+import { jstDay } from "@/lib/snapshot-range";
 
 export const revalidate = 180;
 
@@ -44,6 +47,29 @@ function buildHref(
   return qs ? `/?${qs}` : "/";
 }
 
+/** 「昨日のまとめ」の1行に出す、まとめがある一番新しい日の1位。
+ *  日付のまとめへの入口が急上昇のページにしか無かったので、一番開かれるこのページにも置く。
+ *  まとめは DB に保存したもの（終わった日）か作り置き（直近2日）から取るので、読むのは数行。
+ *  取れなくてもライブのランキングは出したいので、失敗したら null（1行ごと出さない） */
+async function latestDailyTop() {
+  try {
+    const range = await getDayRange();
+    if (!range) return null;
+    const { top } = await getDailyHeadline(range.last, 1);
+    if (!top[0]) return null;
+    const [, m, d] = range.last.split("-").map(Number);
+    const yesterday = jstDay(new Date(Date.now() - 24 * 3600 * 1000));
+    return {
+      day: range.last,
+      // 毎朝の集計（6時ごろ）までは昨日の分がまだ無いので、そのときは日付だけ出す
+      label: range.last === yesterday ? `昨日（${m}/${d}）` : `${m}/${d}`,
+      top: top[0],
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** 「Twitch・ツイキャス 5分ごと / YouTube 毎時」。同じ間隔の配信元をまとめて、スマホでも1行に収める */
 function updateLabel(platforms: PlatformId[]) {
   const byInterval = new Map<string, string[]>();
@@ -67,9 +93,12 @@ export default async function Home({ searchParams }: Props) {
   // 配信元ごとの上位を同時に取り、視聴者数で混ぜて並べる。
   // 取り方（API か DB か）は配信元ごとに違うが、LOADERS が同じ形（LiveEntry）にそろえて返す。
   // 1つの配信元が取れなくても、ほかの配信元は出す
-  const lists = await Promise.all(
-    targets.map((p) => LOADERS[p].live(isJapanese, limit).catch(() => [])),
-  );
+  const [lists, daily] = await Promise.all([
+    Promise.all(
+      targets.map((p) => LOADERS[p].live(isJapanese, limit).catch(() => [])),
+    ),
+    latestDailyTop(),
+  ]);
   const entries = lists
     .flat()
     .sort((a, b) => b.viewers - a.viewers)
@@ -118,6 +147,19 @@ export default async function Home({ searchParams }: Props) {
                 </>
               )}
             </span>
+            {/* 日付のまとめへの入口。リンクの印に矢印は使わず、色で示す（UI の約束ごと） */}
+            {daily && (
+              <span className="mt-1 block truncate text-gray-500">
+                {daily.label}のまとめ：
+                <Link
+                  href={`/daily/${daily.day}`}
+                  className="text-gray-100 transition hover:text-purple-300"
+                >
+                  1位 {daily.top.displayName}{" "}
+                  {formatViewers(daily.top.peakViewers)}人
+                </Link>
+              </span>
+            )}
           </>
         }
         region={
