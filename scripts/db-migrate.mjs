@@ -91,6 +91,18 @@ await db.batch(
     `CREATE INDEX IF NOT EXISTS idx_daily_stats_game_day ON daily_stats (top_game_id, day)`,
     // 毎時の YouTube の収集の「配信予定・配信中だった動画」。索引が無く、表（約2万行）を毎時全部読んでいた
     `CREATE INDEX IF NOT EXISTS idx_video_checks_status ON youtube_video_checks (status, checked_at)`,
+
+    // 2026-10-16 追加：終わった日の日付ページのまとめ（lib/daily.ts の DailySummary を JSON で）。
+    // まとめは1回約34万行を読む。作り置き（unstable_cache）はデプロイのたびに全部消えるので、
+    // ボットが日付ページを巡回するとデプロイごとに全部の日を作り直していた。内容が変わらない日は
+    // ここに1回だけ保存し、ページは1行読むだけにする。毎朝の集計（cron/daily）が書く。
+    // version はまとめの形を変えたときに上げる（古い形の行は読まずに作り直す）
+    `CREATE TABLE IF NOT EXISTS daily_summaries (
+      day        TEXT PRIMARY KEY,  -- 日本時間の日付
+      version    INTEGER NOT NULL,
+      data       TEXT NOT NULL,     -- DailySummary の JSON
+      created_at TEXT NOT NULL
+    )`,
   ],
   "write",
 );
