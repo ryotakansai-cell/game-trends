@@ -22,6 +22,7 @@ import { accountHref, accountKey, PLATFORM_NAMES } from "@/lib/platforms";
 import { getAccountIcons } from "@/lib/platform-loaders";
 import { PageHeader } from "@/components/PageHeader";
 import { PlatformIcon } from "@/components/PlatformIcons";
+import { shortTitle } from "@/lib/text";
 
 // 過去の日の内容は変わらないので、初めて開かれたときに作って1日作り置きする。
 // generateStaticParams が空の配列を返すと「ビルド時には作らず、開かれたら作って保存する」になる
@@ -97,6 +98,13 @@ function EntryRow({
             <PlatformIcon platform={entry.platform} />
           </span>
         </Link>
+        {/* 最高同接だった瞬間の配信タイトル。数字だけでなく「何の配信が見られたか」が分かるように。
+            ハッシュタグや絵文字・末尾の出演者名を外し（lib/text.ts）、はみ出す分は1行で … にする */}
+        {entry.peakTitle && (
+          <p className="mt-0.5 truncate text-xs text-gray-400">
+            {shortTitle(entry.peakTitle, 60)}
+          </p>
+        )}
         {detail && (
           <p className="mt-0.5 truncate text-xs text-gray-500">{detail}</p>
         )}

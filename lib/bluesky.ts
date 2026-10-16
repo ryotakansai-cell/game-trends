@@ -18,8 +18,15 @@ import { PLATFORM_IDS, PLATFORMS, PLATFORM_NAMES } from "@/lib/platforms";
 import { LOADERS } from "@/lib/platform-loaders";
 import { SITE_URL } from "@/lib/site";
 import { jstDay } from "@/lib/snapshot-range";
+import { clip, graphemes, shortTitle } from "@/lib/text";
+import { rankingImage } from "@/lib/og";
+import { getAccountIcons } from "@/lib/platform-loaders";
+import { accountKey } from "@/lib/platforms";
 
-const HASHTAG = "配信トレンド";
+// 2026-10-16 に「#配信トレンド」から変えた。サイト名のタグは、まだ誰も探さない（名前は投稿者名とリンクで分かる）。
+// 「配信ランキング」は投稿の中身そのもので、探す人がいる言葉なので、見つけてもらう入口になる。
+// 配信者の名前のタグは付けない（オーナーの決定。名前を宣伝に使うように見え、記号入りの名前はタグにならない）
+const HASHTAG = "配信ランキング";
 // ログインはどのアカウントでもこの入口で受け付けてくれる。
 // 投稿はアカウントが実際に置かれているサーバー（PDS）に送る（ログイン結果から分かる）
 const ENTRYWAY = "https://bsky.social";
@@ -35,20 +42,8 @@ export type BlueskyReport = {
 };
 
 // ---------------------------------------------------------------
-// 文字の扱い
+// ハッシュタグ
 // ---------------------------------------------------------------
-
-function* segment(s: string) {
-  for (const { segment } of new Intl.Segmenter("ja", {
-    granularity: "grapheme",
-  }).segment(s)) {
-    yield segment;
-  }
-}
-const graphemes = (s: string) => [...segment(s)].length;
-/** 長い名前を n 文字（書記素）までに切る。Bluesky は1投稿300文字まで */
-const clip = (s: string, n: number) =>
-  graphemes(s) > n ? [...segment(s)].slice(0, n - 1).join("") + "…" : s;
 
 /** ハッシュタグを「押せるタグ」にするための印（facet）。
  *  位置は文字数ではなく UTF-8 のバイト数で指定する決まり（日本語は1文字3バイト） */
@@ -67,7 +62,13 @@ function tagFacet(text: string) {
 // ---------------------------------------------------------------
 
 type Session = { accessJwt: string; did: string; pds: string };
-type Card = { uri: string; title: string; description: string; image: string };
+/** リンクカード。image は画像の URL か、その場で作った画像（PNG）そのもの */
+type Card = {
+  uri: string;
+  title: string;
+  description: string;
+  image: string | ArrayBuffer;
+};
 
 function credentials() {
   // コピーのときに付きやすい「先頭の @」と「前後の空白・改行」は取り除く。
@@ -123,19 +124,25 @@ async function checkLogin(): Promise<
   }
 }
 
-/** リンクカードの画像（自分のサイトの OGP 画像）を Bluesky に上げる。
- *  自分のサイトの画像なので、上げ直しても問題ない。失敗したら画像なしのカードにする */
-async function uploadImage(session: Session, url: string) {
+/** リンクカードの画像を Bluesky に上げる。URL なら取ってきて（自分のサイトの OGP 画像）、
+ *  PNG そのものならそのまま上げる。失敗したら画像なしのカードにする */
+async function uploadImage(session: Session, image: string | ArrayBuffer) {
   try {
-    const img = await fetch(url);
-    if (!img.ok) return undefined;
+    let body: ArrayBuffer;
+    if (typeof image === "string") {
+      const img = await fetch(image);
+      if (!img.ok) return undefined;
+      body = await img.arrayBuffer();
+    } else {
+      body = image;
+    }
     const res = await fetch(`${session.pds}/xrpc/com.atproto.repo.uploadBlob`, {
       method: "POST",
       headers: {
         "Content-Type": "image/png",
         Authorization: `Bearer ${session.accessJwt}`,
       },
-      body: await img.arrayBuffer(),
+      body,
     });
     if (!res.ok) return undefined;
     return (await res.json()).blob;
@@ -213,7 +220,42 @@ async function publish(
 // 何を投稿するか
 // ---------------------------------------------------------------
 
-/** 前日のまとめ。まとめがある一番新しい日（ふつうは昨日）の最高同接の上位3人 */
+/** 上位の行を Bluesky の本文にする。見出しのあとに空行を入れ、タイトルは全角スペースで字下げする
+ *  （見出しと「1位」の頭がそろって見づらかったため）。
+ *  1投稿は300文字まで。タイトルが長くて収まらないときは、タイトルを短くしていき、最後はタイトルを外す */
+type TextRow = { name: string; value: string; title: string | null };
+function rankingText(header: string, rows: TextRow[]) {
+  const build = (titleLen: number) =>
+    [
+      header,
+      "",
+      ...rows.flatMap((r, i) => [
+        `${i + 1}位 ${clip(r.name, 16)} ${r.value}`,
+        ...(titleLen > 0 && r.title
+          ? [`　${shortTitle(r.title, titleLen)}`]
+          : []),
+      ]),
+      "",
+      `#${HASHTAG}`,
+    ].join("\n");
+  for (const len of [24, 18, 12]) {
+    const text = build(len);
+    if (graphemes(text) <= 300) return text;
+  }
+  return build(0);
+}
+
+/** 日本時間の「10/16 21時」 */
+function jstLabel(now: Date) {
+  const j = new Date(now.getTime() + 9 * 3600 * 1000);
+  return {
+    hour: j.getUTCHours(),
+    label: `${j.getUTCMonth() + 1}/${j.getUTCDate()} ${j.getUTCHours()}時`,
+  };
+}
+
+/** 前日のまとめ。まとめがある一番新しい日（ふつうは昨日）の最高同接の上位5人と、
+ *  最高同接だった瞬間の配信タイトル。カードの画像は日付ページの OGP 画像（アイコン付きの上位5人） */
 export async function postDailyRanking(
   preview: boolean,
 ): Promise<BlueskyReport> {
@@ -226,18 +268,18 @@ export async function postDailyRanking(
   if (day < jstDay(new Date(Date.now() - 2 * 24 * 3600 * 1000)))
     return { enabled: false, key: day, skipped: "最新のまとめが古い" };
 
-  const { top } = await getDailyHeadline(day);
+  const { top } = await getDailyHeadline(day, 5);
   if (top.length === 0)
     return { enabled: false, key: day, skipped: "その日の記録が無い" };
 
-  const text = [
+  const text = rankingText(
     `${dayTitle(day)}の配信ランキング（最高同接）`,
-    ...top.map(
-      (e, i) =>
-        `${i + 1}位 ${clip(e.displayName, 20)} ${formatViewers(e.peakViewers)}人`,
-    ),
-    `#${HASHTAG}`,
-  ].join("\n");
+    top.map((e) => ({
+      name: e.displayName,
+      value: `${formatViewers(e.peakViewers)}人`,
+      title: e.peakTitle,
+    })),
+  );
 
   return publish(
     day,
@@ -253,45 +295,67 @@ export async function postDailyRanking(
   );
 }
 
-/** いま見られている配信（日本）の上位5つ。トップページと同じく、全部の配信元から混ぜて並べる
- *  （Twitch は API で今の数字、YouTube は直近の毎時の収集＝最大1時間前から） */
-export async function postLiveRanking(
-  preview: boolean,
-): Promise<BlueskyReport> {
+/** いま見られている配信（日本）の上位5つと、カードに付ける画像（アイコン付きの上位5人）。
+ *  トップページと同じく、全部の配信元から混ぜて並べる
+ *  （Twitch は API で今の数字、YouTube は直近の毎時の収集＝最大1時間前から）。
+ *  確認用に画像だけ見られるよう、投稿とは分けてある（/api/cron/bluesky?kind=live&dryRun=1&image=1） */
+export async function buildLiveRanking(now = new Date()) {
   const lists = await Promise.all(
     PLATFORM_IDS.map((p) => LOADERS[p].live(true, 20).catch(() => [])),
   );
   const entries = lists
     .flat()
-    .map((e) => ({
-      name: e.channelName,
-      viewers: e.viewers,
-      platform: PLATFORMS[e.platform].label,
-    }))
     .sort((a, b) => b.viewers - a.viewers)
     .slice(0, 5);
-  if (entries.length === 0)
-    return { enabled: false, skipped: "配信中の記録が無い" };
+  if (entries.length === 0) return null;
 
-  const now = new Date();
-  const hour = new Date(now.getTime() + 9 * 3600 * 1000).getUTCHours();
-  const text = [
-    `${hour}時 いま見られている配信`,
-    ...entries.map(
-      (e, i) =>
-        `${i + 1}位 ${clip(e.name, 18)} ${formatViewers(e.viewers)}人（${e.platform}）`,
-    ),
-    `#${HASHTAG}`,
-  ].join("\n");
+  const { hour, label } = jstLabel(now);
+  const header = `${label} いま見られている配信`;
+  const text = rankingText(
+    header,
+    entries.map((e) => ({
+      name: e.channelName,
+      value: `${formatViewers(e.viewers)}人`,
+      title: e.title,
+    })),
+  );
 
-  return publish(
-    `live-${jstDay(now)}-${hour}`,
+  // アイコンは一覧に付いてくる配信元（ツイキャス・Kick）はそれを、ほかは表示のたびに取る方針どおり API から
+  const icons = await getAccountIcons(entries.filter((e) => !e.iconUrl)).catch(
+    () => new Map<string, string>(),
+  );
+  const image = await rankingImage(
+    header,
+    `日本の配信 ・ ${PLATFORM_NAMES}`,
+    entries.map((e, i) => ({
+      rank: i + 1,
+      name: e.channelName,
+      title: shortTitle(e.title, 40),
+      value: `${formatViewers(e.viewers)}人`,
+      platform: PLATFORMS[e.platform].label,
+      iconUrl: e.iconUrl ?? icons.get(accountKey(e)),
+    })),
+  );
+  return {
+    key: `live-${jstDay(now)}-${hour}`,
     text,
+    image: await image.arrayBuffer(),
+  };
+}
+
+export async function postLiveRanking(
+  preview: boolean,
+): Promise<BlueskyReport> {
+  const live = await buildLiveRanking();
+  if (!live) return { enabled: false, skipped: "配信中の記録が無い" };
+  return publish(
+    live.key,
+    live.text,
     {
       uri: SITE_URL,
       title: "ライブ配信ランキング",
       description: `${PLATFORM_NAMES}を横断して、いま見られている配信`,
-      image: `${SITE_URL}/opengraph-image`,
+      image: live.image,
     },
     preview,
   );
