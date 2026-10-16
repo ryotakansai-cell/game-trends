@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { postDailyRanking, postLiveRanking } from "@/lib/bluesky";
+import {
+  buildLiveRanking,
+  postDailyRanking,
+  postLiveRanking,
+} from "@/lib/bluesky";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +27,20 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    // &dryRun=1&image=1 … live のカードに付ける画像（PNG）をそのまま返す（投稿前に見た目を確かめるため）。
+    // daily の画像は日付ページの OGP 画像（/daily/日付/opengraph-image）なので、そちらを直接開けばよい
+    if (
+      preview &&
+      kind === "live" &&
+      request.nextUrl.searchParams.get("image") === "1"
+    ) {
+      const live = await buildLiveRanking();
+      if (!live) return NextResponse.json({ skipped: "配信中の記録が無い" });
+      return new Response(live.image, {
+        headers: { "Content-Type": "image/png" },
+      });
+    }
+
     const report =
       kind === "daily"
         ? await postDailyRanking(preview)

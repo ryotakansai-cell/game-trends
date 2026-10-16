@@ -28,6 +28,9 @@ export type DailyEntry = {
   avgViewers: number;
   hoursLive: number;
   topGameId: string | null;
+  /** その日、最高同接だった瞬間に配信していたタイトル。数字だけでなく「何の配信が見られたか」を出すため。
+   *  毎時の記録が消えた90日より前の日は、その日一番長く配信した1本のタイトル（daily_stats.main_title）で代わりにする */
+  peakTitle: string | null;
   prevPeak?: number; // 前日の最高同接（伸びた人の一覧だけ）
 };
 
@@ -84,8 +87,11 @@ export function shiftDay(day: string, diff: number) {
 
 const previousDay = (day: string) => shiftDay(day, -1);
 
-function toEntry(r: Record<string, unknown>): DailyEntry {
+function toEntry(r: Record<string, unknown>): DailyEntry & {
+  accountId: number;
+} {
   return {
+    accountId: Number(r.account_id),
     platform: toPlatformId(r.platform),
     platformId: String(r.platform_id),
     login: r.login ? String(r.login) : null,
@@ -95,13 +101,14 @@ function toEntry(r: Record<string, unknown>): DailyEntry {
     avgViewers: Number(r.avg_viewers),
     hoursLive: Number(r.hours_live),
     topGameId: r.top_game_id ? String(r.top_game_id) : null,
+    peakTitle: r.main_title ? String(r.main_title) : null,
     prevPeak: r.prev_peak === undefined ? undefined : Number(r.prev_peak),
   };
 }
 
 const ENTRY_COLUMNS = `
   a.platform, a.platform_id, a.login, a.display_name, a.creator_id,
-  d.peak_viewers, d.avg_viewers, d.hours_live, d.top_game_id`;
+  d.account_id, d.peak_viewers, d.avg_viewers, d.hours_live, d.top_game_id, d.main_title`;
 
 /** その日1日のまとめを作る。読むのは daily_stats のその日と前日（各数千行）と、
  *  ゲームの分だけ毎時の記録の1日分。ページは1日作り置きするので、読む回数は少ない */
@@ -182,12 +189,46 @@ async function queryDailySummary(day: string): Promise<DailySummary> {
     }),
   ]);
 
-  return {
-    day,
+  const lists = {
     topPeak: topPeak.rows.map(toEntry),
     longest: longest.rows.map(toEntry),
     rising: rising.rows.map(toEntry),
     personalBests: bests.rows.map(toEntry),
+  };
+
+  // 出てくる人（最大50人ほど）の、その日の毎時の記録のうち視聴者が一番多かった回のタイトル。
+  // (account_id, captured_at) の索引で1人ずつ引くので、読むのは1人あたり24行ほど
+  const ids = [
+    ...new Set(Object.values(lists).flatMap((l) => l.map((e) => e.accountId))),
+  ];
+  if (ids.length > 0) {
+    const titles = await db.execute({
+      sql: `SELECT account_id, title FROM (
+              SELECT account_id, title,
+                ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY viewers DESC, captured_at) AS rn
+              FROM live_snapshots
+              WHERE account_id IN (${ids.map(() => "?").join(",")})
+                AND captured_at >= ? AND captured_at < ? AND title IS NOT NULL
+            ) WHERE rn = 1`,
+      args: [...ids, from, to],
+    });
+    const byId = new Map(
+      titles.rows.map((r) => [Number(r.account_id), String(r.title)]),
+    );
+    for (const e of Object.values(lists).flat()) {
+      e.peakTitle = byId.get(e.accountId) ?? e.peakTitle;
+    }
+  }
+  // 内部の ID は保存やページに要らないので外す
+  const strip = (l: ReturnType<typeof toEntry>[]): DailyEntry[] =>
+    l.map(({ accountId: _, ...e }) => e);
+
+  return {
+    day,
+    topPeak: strip(lists.topPeak),
+    longest: strip(lists.longest),
+    rising: strip(lists.rising),
+    personalBests: strip(lists.personalBests),
     games: games.rows.map((r) => ({
       gameId: String(r.game_id),
       avgViewers: Number(r.avg_viewers),
@@ -206,7 +247,7 @@ async function queryDailySummary(day: string): Promise<DailySummary> {
 // それより前の日を「終わった日」とみなす。保存は毎朝の集計（cron/daily）がやり、ページからは書かない
 
 /** まとめの形（DailySummary）を変えたら上げる。古い形で保存した行は読まずに作り直す */
-const SUMMARY_VERSION = 1;
+const SUMMARY_VERSION = 2; // 2：最高同接だった瞬間のタイトル（peakTitle）を足した
 
 /** 内容がもう変わらない日なら true（2日前より前） */
 function isFinalDay(day: string) {
