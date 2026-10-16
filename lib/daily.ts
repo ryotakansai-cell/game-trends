@@ -196,24 +196,100 @@ async function queryDailySummary(day: string): Promise<DailySummary> {
   };
 }
 
-// まとめは1回で約30万行を読む（ゲームの欄は毎時の記録の1日分）。ページは1日作り置きだが、
-// 日付ページは毎日増えて検索エンジンにも巡回されるので、作り直すたびに読んでいた。
+// まとめは1回で約34万行を読む（ゲームの欄は毎時の記録の1日分）。
+// 作り置き（unstable_cache）は保存場所の名前にビルドの番号が入っていて、デプロイのたびに全部消える。
+// 日付ページは検索エンジンに巡回されるので、デプロイのたびに全部の日を作り直していた
+// （2026-10-16 の Top Queries で、11時間に16日分・約270万行）。
+//
+// そこで「内容がもう変わらない日」のまとめは DB の daily_summaries に1回だけ保存し、ページは1行読むだけにする。
 // 集計は翌朝にもう一度まとめ直す（lib/daily-stats.ts の rollupPendingDays）ので、直近2日は変わりうる。
-// それより前の日は内容が変わらないので長く作り置きする
+// それより前の日を「終わった日」とみなす。保存は毎朝の集計（cron/daily）がやり、ページからは書かない
+
+/** まとめの形（DailySummary）を変えたら上げる。古い形で保存した行は読まずに作り直す */
+const SUMMARY_VERSION = 1;
+
+/** 内容がもう変わらない日なら true（2日前より前） */
+function isFinalDay(day: string) {
+  return day < jstDay(new Date(Date.now() - 2 * 24 * 3600 * 1000));
+}
+
+async function readStoredSummary(day: string): Promise<DailySummary | null> {
+  const r = await getDbClient().execute({
+    sql: "SELECT data FROM daily_summaries WHERE day = ? AND version = ?",
+    args: [day, SUMMARY_VERSION],
+  });
+  return r.rows[0]
+    ? (JSON.parse(String(r.rows[0].data)) as DailySummary)
+    : null;
+}
+
+// 終わった日：保存してあればそれを読む（1行）。まだ保存されていない日（毎朝少しずつ埋める）はその場で作る。
+// どちらでも結果は変わらないので、作り置きは長くてよい
 const cachedFinalSummary = unstable_cache(
-  queryDailySummary,
-  ["daily-summary-final"],
+  async (day: string) =>
+    (await readStoredSummary(day)) ?? queryDailySummary(day),
+  ["daily-summary-final-v2"],
   { revalidate: 30 * 86400 },
 );
+
+// 直近2日：中身が変わるのは毎朝の集計のときだけ。以前は1時間作り置きで、ボットが毎時開くと
+// 1日24回作り直していた。鍵に「集計がある最新の日」を入れ、集計が進んだときだけ作り直す
 const cachedRecentSummary = unstable_cache(
-  queryDailySummary,
-  ["daily-summary-recent"],
-  { revalidate: 3600 },
+  (day: string, _lastDay: string) => queryDailySummary(day),
+  ["daily-summary-recent-v2"],
+  { revalidate: 86400 },
 );
 
-export function getDailySummary(day: string): Promise<DailySummary> {
-  const twoDaysAgo = jstDay(new Date(Date.now() - 2 * 24 * 3600 * 1000));
-  return day < twoDaysAgo ? cachedFinalSummary(day) : cachedRecentSummary(day);
+export async function getDailySummary(day: string): Promise<DailySummary> {
+  if (isFinalDay(day)) return cachedFinalSummary(day);
+  const lastDay = (await getDayRange())?.last ?? "";
+  return cachedRecentSummary(day, lastDay);
+}
+
+/** 終わった日のまとめのうち、まだ保存していない日を新しい順に最大 limit 日ぶん作って保存する。
+ *  毎朝の集計（cron/daily）から呼ぶ。ふつうは1日1日ずつ増えるだけ。
+ *  初めて動かしたときや ?from= でまとめ直したときは、残りを毎朝 limit 日ずつ埋める
+ *  （1日分で約34万行読むので、一度に全部はやらない）。
+ *  毎時の記録は90日で消えるので、消える前に保存しておけば「見られたゲーム」も残り続ける */
+export async function saveFinalSummaries(limit = 10) {
+  const range = await getDayRange();
+  if (!range) return [];
+  const stored = await getDbClient().execute({
+    sql: "SELECT day FROM daily_summaries WHERE version = ?",
+    args: [SUMMARY_VERSION],
+  });
+  const have = new Set(stored.rows.map((r) => String(r.day)));
+
+  const saved: string[] = [];
+  for (
+    let day = range.last;
+    day >= range.first && saved.length < limit;
+    day = shiftDay(day, -1)
+  ) {
+    if (!isFinalDay(day) || have.has(day)) continue;
+    const summary = await queryDailySummary(day);
+    await getDbClient().execute({
+      sql: `INSERT OR REPLACE INTO daily_summaries (day, version, data, created_at)
+            VALUES (?, ?, ?, ?)`,
+      args: [
+        day,
+        SUMMARY_VERSION,
+        JSON.stringify(summary),
+        new Date().toISOString(),
+      ],
+    });
+    saved.push(day);
+  }
+  return saved;
+}
+
+/** ?from= でまとめ直した日から先の保存を消す（daily_stats が変わったので作り直させる） */
+export async function clearSummariesFrom(day: string) {
+  const r = await getDbClient().execute({
+    sql: "DELETE FROM daily_summaries WHERE day >= ?",
+    args: [day],
+  });
+  return r.rowsAffected;
 }
 
 /** OGP 画像用。最高同接の上位 n 人と、配信者の数だけ。
