@@ -50,6 +50,15 @@ const TrendingIcon = () => (
   </svg>
 );
 
+// まとめ：カレンダー（1日単位で振り返るページ）
+const SummaryIcon = () => (
+  <svg {...iconProps}>
+    <rect x="3.5" y="5" width="17" height="15" rx="2.5" />
+    <path d="M3.5 9.5h17M8 3v4M16 3v4" />
+    <path d="M7.5 13.5h3M7.5 16.5h6" />
+  </svg>
+);
+
 const GameIcon = () => (
   <svg {...iconProps}>
     <rect x="2" y="7" width="20" height="10" rx="5" />
@@ -79,9 +88,17 @@ const NAV: NavItem[] = [
     href: "/trending",
     label: "急上昇",
     icon: <TrendingIcon />,
-    // 日付ごとのまとめ（/daily）も「急上昇」の仲間として扱う。
-    // ナビを5つに増やすとスマホの下のタブが窮屈になるため
-    match: (p) => p.startsWith("/trending") || p.startsWith("/daily"),
+    match: (p) => p.startsWith("/trending"),
+  },
+  {
+    // 今日これまで（/today）と日付ごとのまとめ（/daily）。中の切り替え（SummaryTabs）で行き来する。
+    // 2026-10-17 に足した。以前はこの2つを「急上昇」の中に入れていたが、急上昇のページが
+    // 「いろいろ入った箱」に見え、ライブのページにも入口のリンクを置いてゴチャついたため、独立させた。
+    // 名前はどれも3文字なので、スマホの下のタブが5つでも1つ約75pxに収まる
+    href: "/today",
+    label: "まとめ",
+    icon: <SummaryIcon />,
+    match: (p) => p.startsWith("/today") || p.startsWith("/daily"),
   },
   {
     href: "/games",
@@ -151,9 +168,9 @@ export function SiteHeader() {
       </header>
 
       {/* スマホ：画面下に固定するタブバー（アプリと同じ形）。
-          4つ全部が常に見え、親指で押しやすい。下のページ本文が隠れないよう、
+          5つ全部が常に見え、親指で押しやすい。下のページ本文が隠れないよう、
           layout の body に同じ高さの下余白を入れてある */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-white/10 bg-[#0a0a0a]/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-white/10 bg-[#0a0a0a]/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden">
         {NAV.map((item) => {
           const active = item.match(pathname);
           return (

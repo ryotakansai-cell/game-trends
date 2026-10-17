@@ -8,6 +8,7 @@ import {
 } from "@/lib/kick";
 import { getGamesByNames } from "@/lib/twitch";
 import { getDbClient, batchInChunks } from "@/lib/db";
+import { recordTodayPeaks } from "@/lib/today";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -147,6 +148,19 @@ export async function GET(request: NextRequest) {
           capturedAt,
         ],
       })),
+    );
+
+    // 今日これまでの最高同接（today_peaks）に反映する（lib/today.ts）
+    await recordTodayPeaks(
+      "kick",
+      streams.map((s) => ({
+        platformId: String(s.broadcaster_user_id),
+        viewers: s.viewer_count,
+        title: s.stream_title,
+        contentId: thumbnailId(s.thumbnail),
+        gameId: games.get(s.category?.name ?? "")?.id ?? null,
+      })),
+      capturedAt,
     );
 
     return NextResponse.json({

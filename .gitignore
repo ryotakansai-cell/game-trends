@@ -49,3 +49,6 @@ _*.mjs
 .open-next
 .wrangler
 .dev.vars
+
+# npm run bsky:preview が保存する Bluesky のカード画像（確認用）
+.bsky-preview/

@@ -97,6 +97,23 @@ await db.batch(
     // ボットが日付ページを巡回するとデプロイごとに全部の日を作り直していた。内容が変わらない日は
     // ここに1回だけ保存し、ページは1行読むだけにする。毎朝の集計（cron/daily）が書く。
     // version はまとめの形を変えたときに上げる（古い形の行は読まずに作り直す）
+    // 2026-10-16 追加：今日（日本時間）これまでの、アカウントごとの最高同接と、その瞬間のタイトルなど。
+    // 「今日これまで」のページ用。ページのたびに今日の毎時の記録（多いと10万行）を読み直さないよう、
+    // 毎時の収集が記録した配信を、その場でここに反映させる（前より同接が多いときだけ書き換える）。
+    // ページは上位の数十行を読むだけで済む。2日より前の行は毎朝の集計（cron/daily）で消す
+    `CREATE TABLE IF NOT EXISTS today_peaks (
+      day             TEXT NOT NULL,     -- 日本時間の日付
+      account_id      INTEGER NOT NULL REFERENCES accounts(id),
+      peak_viewers    INTEGER NOT NULL,
+      peak_title      TEXT,
+      peak_content_id TEXT,              -- YouTube の動画ID など（サムネイル・リンク用）
+      peak_game_id    TEXT,
+      peak_at         TEXT NOT NULL,     -- 最高同接を記録した収集の時刻
+      PRIMARY KEY (day, account_id)
+    )`,
+    // その日の上位を、同接の多い順に索引からたどって読むため
+    `CREATE INDEX IF NOT EXISTS idx_today_peaks_rank ON today_peaks (day, peak_viewers)`,
+
     `CREATE TABLE IF NOT EXISTS daily_summaries (
       day        TEXT PRIMARY KEY,  -- 日本時間の日付
       version    INTEGER NOT NULL,

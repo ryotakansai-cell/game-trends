@@ -18,7 +18,7 @@ import { PLATFORM_IDS, PLATFORMS, PLATFORM_NAMES } from "@/lib/platforms";
 import { LOADERS } from "@/lib/platform-loaders";
 import { SITE_URL } from "@/lib/site";
 import { jstDay } from "@/lib/snapshot-range";
-import { clip, graphemes, shortTitle } from "@/lib/text";
+import { clip, shortTitle } from "@/lib/text";
 import { rankingImage } from "@/lib/og";
 import { getAccountIcons } from "@/lib/platform-loaders";
 import { accountKey } from "@/lib/platforms";
@@ -220,29 +220,26 @@ async function publish(
 // 何を投稿するか
 // ---------------------------------------------------------------
 
-/** 上位の行を Bluesky の本文にする。見出しのあとに空行を入れ、タイトルは全角スペースで字下げする
- *  （見出しと「1位」の頭がそろって見づらかったため）。
- *  1投稿は300文字まで。タイトルが長くて収まらないときは、タイトルを短くしていき、最後はタイトルを外す */
-type TextRow = { name: string; value: string; title: string | null };
+/** 上位の行を Bluesky の本文にする。見出し、空行、「1位 名前 人数」を1人1行、空行、ハッシュタグ。
+ *  2026-10-17：以前は各行の下に配信タイトルを字下げして入れていたが、スマホでは1行に全角15〜17文字ほどしか入らず、
+ *  タイトルが2行に折り返してごちゃついた。タイトルはカードの画像に全員分あるので、本文は名前と人数だけにし、
+ *  スマホでも1人1行に収まるよう名前は12文字で切る（オーナーの決定）。300文字には十分収まる */
+type TextRow = { name: string; value: string };
 function rankingText(header: string, rows: TextRow[]) {
-  const build = (titleLen: number) =>
-    [
-      header,
-      "",
-      ...rows.flatMap((r, i) => [
-        `${i + 1}位 ${clip(r.name, 16)} ${r.value}`,
-        ...(titleLen > 0 && r.title
-          ? [`　${shortTitle(r.title, titleLen)}`]
-          : []),
-      ]),
-      "",
-      `#${HASHTAG}`,
-    ].join("\n");
-  for (const len of [24, 18, 12]) {
-    const text = build(len);
-    if (graphemes(text) <= 300) return text;
-  }
-  return build(0);
+  return [
+    header,
+    "",
+    ...rows.map((r, i) => `${i + 1}位 ${clip(r.name, 12)} ${r.value}`),
+    "",
+    `#${HASHTAG}`,
+  ].join("\n");
+}
+
+/** 2026-10-16 → 10/16（金）。スマホで見出しが1行に収まるよう、日付ページの「10月16日（金）」より短くする */
+function shortDayTitle(day: string) {
+  const d = new Date(`${day}T00:00:00Z`);
+  const wd = ["日", "月", "火", "水", "木", "金", "土"][d.getUTCDay()];
+  return `${d.getUTCMonth() + 1}/${d.getUTCDate()}（${wd}）`;
 }
 
 /** 日本時間の「10/16 21時」 */
@@ -254,8 +251,8 @@ function jstLabel(now: Date) {
   };
 }
 
-/** 前日のまとめ。まとめがある一番新しい日（ふつうは昨日）の最高同接の上位5人と、
- *  最高同接だった瞬間の配信タイトル。カードの画像は日付ページの OGP 画像（アイコン付きの上位5人） */
+/** 前日のまとめ。まとめがある一番新しい日（ふつうは昨日）の最高同接の上位5人。
+ *  カードの画像は日付ページの OGP 画像（アイコン・最高同接だった瞬間のタイトル付きの上位5人） */
 export async function postDailyRanking(
   preview: boolean,
 ): Promise<BlueskyReport> {
@@ -273,11 +270,10 @@ export async function postDailyRanking(
     return { enabled: false, key: day, skipped: "その日の記録が無い" };
 
   const text = rankingText(
-    `${dayTitle(day)}の配信ランキング（最高同接）`,
+    `${shortDayTitle(day)}の配信ランキング`,
     top.map((e) => ({
       name: e.displayName,
       value: `${formatViewers(e.peakViewers)}人`,
-      title: e.peakTitle,
     })),
   );
 
@@ -316,7 +312,6 @@ export async function buildLiveRanking(now = new Date()) {
     entries.map((e) => ({
       name: e.channelName,
       value: `${formatViewers(e.viewers)}人`,
-      title: e.title,
     })),
   );
 

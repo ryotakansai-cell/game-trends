@@ -9,6 +9,7 @@ import {
 } from "@/lib/youtube";
 import { getDbClient, batchInChunks } from "@/lib/db";
 import { jstDay } from "@/lib/snapshot-range";
+import { recordTodayPeaks } from "@/lib/today";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -179,6 +180,18 @@ export async function GET(request: NextRequest) {
           capturedAt,
         ],
       })),
+    );
+
+    // ⑨' 今日これまでの最高同接（today_peaks）に反映する（lib/today.ts）
+    await recordTodayPeaks(
+      "youtube",
+      videos.map((v) => ({
+        platformId: v.channelId,
+        viewers: v.viewers,
+        title: v.title,
+        contentId: v.videoId,
+      })),
+      capturedAt,
     );
 
     // ⑩ RSS から確かめた動画の結果を覚える。状態が前回と同じなら書き込まない

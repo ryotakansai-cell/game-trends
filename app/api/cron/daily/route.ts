@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rollupPendingDays, deleteOldRecords } from "@/lib/daily-stats";
 import { saveFinalSummaries, clearSummariesFrom } from "@/lib/daily";
+import { deleteOldTodayPeaks } from "@/lib/today";
 
 export const dynamic = "force-dynamic";
 
@@ -45,10 +46,13 @@ export async function GET(request: NextRequest) {
     }
 
     const deleted = await deleteOldRecords();
+    // 今日これまでの最高同接（today_peaks）の、2日より前の行を消す（その日の分は日付のまとめに引き継がれている）
+    const deletedTodayPeaks = await deleteOldTodayPeaks();
     return NextResponse.json({
       rolled_up: rolledUp,
       saved_summaries: summaries,
       ...deleted,
+      deleted_today_peaks: deletedTodayPeaks,
     });
   } catch (e) {
     console.error(e);
