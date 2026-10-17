@@ -7,6 +7,7 @@ import {
   type TwitcastingLive,
 } from "@/lib/twitcasting";
 import { getDbClient, batchInChunks } from "@/lib/db";
+import { recordTodayPeaks } from "@/lib/today";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -137,6 +138,18 @@ export async function GET(request: NextRequest) {
         `,
         args: [b.id, m.current_view_count, m.title, m.id, capturedAt],
       })),
+    );
+
+    // ④' 今日これまでの最高同接（today_peaks）に反映する（lib/today.ts）
+    await recordTodayPeaks(
+      "twitcasting",
+      lives.map(({ movie: m, broadcaster: b }) => ({
+        platformId: b.id,
+        viewers: m.current_view_count,
+        title: m.title,
+        contentId: m.id,
+      })),
+      capturedAt,
     );
 
     return NextResponse.json({

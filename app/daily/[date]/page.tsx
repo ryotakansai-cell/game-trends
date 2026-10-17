@@ -21,6 +21,7 @@ import {
 import { accountHref, accountKey, PLATFORM_NAMES } from "@/lib/platforms";
 import { getAccountIcons } from "@/lib/platform-loaders";
 import { PageHeader } from "@/components/PageHeader";
+import { SummaryTabs } from "@/components/SummaryTabs";
 import { PlatformIcon } from "@/components/PlatformIcons";
 import { shortTitle } from "@/lib/text";
 
@@ -46,7 +47,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const top = summary.topPeak[0];
   const title = `${dayTitle(date)}の配信ランキング`;
   const description = top
-    ? `${dayTitle(date)}に最も見られた配信者は${top.displayName}（最高同接${top.peakViewers.toLocaleString("ja-JP")}人）。${PLATFORM_NAMES}の最高同接ランキング、前日から伸びた配信者、長時間配信、見られたゲーム。`
+    ? `${dayTitle(date)}に最も見られた配信者は${top.displayName}（最高同接${top.peakViewers.toLocaleString("ja-JP")}人）。${PLATFORM_NAMES}の最高同接ランキング、前日から伸びた配信者、自己ベスト、見られたゲーム。`
     : `${dayTitle(date)}の${PLATFORM_NAMES}の配信ランキング。`;
   return {
     title,
@@ -143,12 +144,7 @@ export default async function DailyPage({ params }: Props) {
   const summary = await loadSummary(date);
   if (!summary) notFound();
 
-  const all = [
-    ...summary.topPeak,
-    ...summary.longest,
-    ...summary.rising,
-    ...summary.personalBests,
-  ];
+  const all = [...summary.topPeak, ...summary.rising, ...summary.personalBests];
   const [range, icons, games] = await Promise.all([
     getDayRange(),
     // 同じ人が複数の一覧に出るので、配信元ごとに重複を除いてから取る
@@ -170,6 +166,7 @@ export default async function DailyPage({ params }: Props) {
 
   return (
     <main className="mx-auto w-full max-w-6xl px-6 py-6 sm:py-12">
+      <SummaryTabs current="daily" />
       <PageHeader
         eyebrow="DAILY"
         title={`${dayTitle(date)}の配信`}
@@ -262,19 +259,6 @@ export default async function DailyPage({ params }: Props) {
               </ul>
             </Section>
           )}
-          <Section title="長時間配信">
-            <ul className="mt-3">
-              {summary.longest.map((e) => (
-                <EntryRow
-                  key={`${e.platform}-${e.platformId}`}
-                  entry={e}
-                  iconUrl={iconOf(e)}
-                  detail={`最高 ${formatViewers(e.peakViewers)}人`}
-                  value={`${e.hoursLive}時間`}
-                />
-              ))}
-            </ul>
-          </Section>
         </div>
       </div>
 

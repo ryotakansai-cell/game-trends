@@ -10,6 +10,7 @@ import {
 } from "@/lib/twitch";
 import { getDbClient, batchInChunks } from "@/lib/db";
 import { rollupIfBehind } from "@/lib/daily-stats";
+import { recordTodayPeaks } from "@/lib/today";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -163,6 +164,26 @@ export async function GET(request: NextRequest) {
         `,
         args: [s.streamer_id, s.viewers, s.title, s.game_id, s.captured_at],
       })),
+    );
+
+    // ⑦' 今日これまでの最高同接（today_peaks）に反映する（lib/today.ts）。
+    // 「今日これまで」に出すのは日本の配信者だけなので、日本語の配信と名寄せ済みの人だけを入れる。
+    // 全世界の上位800配信まで入れると、書き込みが約4割増える（2026-10-16 の見積もり）
+    const japaneseIds = new Set([
+      ...allStreams.filter((s) => s.language === "ja").map((s) => s.user_id),
+      ...linked.rows.map((r) => String(r.platform_id)),
+    ]);
+    await recordTodayPeaks(
+      "twitch",
+      streamerSnapshotRows
+        .filter((s) => japaneseIds.has(s.streamer_id))
+        .map((s) => ({
+          platformId: s.streamer_id,
+          viewers: s.viewers,
+          title: s.title,
+          gameId: s.game_id,
+        })),
+      capturedAt,
     );
 
     // ⑧ 毎朝の集計（cron/daily）が動かなかった日があっても、ここで追いつく。

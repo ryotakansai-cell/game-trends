@@ -2,7 +2,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { formatViewers } from "@/lib/twitch";
 import { getCreatorIdMap } from "@/lib/creators";
-import { getDayRange, dayTitle } from "@/lib/daily";
 import { getRising } from "@/lib/rising";
 import { getAccountIcons } from "@/lib/platform-loaders";
 import {
@@ -74,10 +73,6 @@ export default async function TrendingPage({ searchParams }: Props) {
     .sort()
     .at(-1);
 
-  // まとめがある一番新しい日（ふつうは昨日）。日付が変わった直後は昨日の集計がまだ無いので、
-  // 「昨日」を決め打ちせず DB の最新の日にリンクする
-  const latestDay = (await getDayRange().catch(() => null))?.last;
-
   return (
     <main className="mx-auto w-full max-w-6xl px-6 py-6 sm:py-12">
       <PageHeader
@@ -92,15 +87,6 @@ export default async function TrendingPage({ searchParams }: Props) {
                 <>
                   （<RelativeTime iso={latestAt} />）
                 </>
-              )}
-              {/* 1日単位で振り返るまとめへの入口。急上昇は「今」、こちらは「その日1日」 */}
-              {latestDay && (
-                <Link
-                  href={`/daily/${latestDay}`}
-                  className="ml-3 text-gray-300 transition hover:text-purple-300"
-                >
-                  {dayTitle(latestDay)}のまとめ
-                </Link>
               )}
             </span>
           </>

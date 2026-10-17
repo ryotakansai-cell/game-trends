@@ -39,7 +39,6 @@ export type DailyGame = { gameId: string; avgViewers: number };
 export type DailySummary = {
   day: string;
   topPeak: DailyEntry[]; // 最高同接の上位
-  longest: DailyEntry[]; // 配信時間の長い順
   rising: DailyEntry[]; // 前日より最高同接が伸びた人
   personalBests: DailyEntry[]; // 直近30日の自己最高を更新した人（prevPeak = それまでの最高）
   games: DailyGame[]; // 日本の Twitch 配信で見られたゲーム
@@ -120,19 +119,12 @@ async function queryDailySummary(day: string): Promise<DailySummary> {
     new Date(`${day}T00:00:00+09:00`).getTime() + 24 * 3600 * 1000,
   ).toISOString();
 
-  const [topPeak, longest, rising, games, count, bests] = await Promise.all([
+  const [topPeak, rising, games, count, bests] = await Promise.all([
     db.execute({
       sql: `SELECT ${ENTRY_COLUMNS}
             FROM daily_stats d JOIN accounts a ON a.id = d.account_id
             WHERE d.day = ? AND ${JAPAN_FILTER}
             ORDER BY d.peak_viewers DESC LIMIT 20`,
-      args: [day],
-    }),
-    db.execute({
-      sql: `SELECT ${ENTRY_COLUMNS}
-            FROM daily_stats d JOIN accounts a ON a.id = d.account_id
-            WHERE d.day = ? AND ${JAPAN_FILTER}
-            ORDER BY d.hours_live DESC, d.peak_viewers DESC LIMIT 10`,
       args: [day],
     }),
     // 前日も配信していて、最高同接が伸びた人。小さな配信の「10人→40人」で埋まらないよう、
@@ -191,7 +183,6 @@ async function queryDailySummary(day: string): Promise<DailySummary> {
 
   const lists = {
     topPeak: topPeak.rows.map(toEntry),
-    longest: longest.rows.map(toEntry),
     rising: rising.rows.map(toEntry),
     personalBests: bests.rows.map(toEntry),
   };
@@ -226,7 +217,6 @@ async function queryDailySummary(day: string): Promise<DailySummary> {
   return {
     day,
     topPeak: strip(lists.topPeak),
-    longest: strip(lists.longest),
     rising: strip(lists.rising),
     personalBests: strip(lists.personalBests),
     games: games.rows.map((r) => ({
@@ -247,7 +237,9 @@ async function queryDailySummary(day: string): Promise<DailySummary> {
 // それより前の日を「終わった日」とみなす。保存は毎朝の集計（cron/daily）がやり、ページからは書かない
 
 /** まとめの形（DailySummary）を変えたら上げる。古い形で保存した行は読まずに作り直す */
-const SUMMARY_VERSION = 2; // 2：最高同接だった瞬間のタイトル（peakTitle）を足した
+// 2：最高同接だった瞬間のタイトル（peakTitle）を足した
+// 3：「長時間配信」を外した（上位が24時間つけっぱなしの配信（ニュース・猫カメラ・BGM）ばかりで、見る価値が無かった）
+const SUMMARY_VERSION = 3;
 
 /** 内容がもう変わらない日なら true（2日前より前） */
 function isFinalDay(day: string) {
