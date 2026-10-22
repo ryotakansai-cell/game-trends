@@ -34,6 +34,11 @@ game-trends のままだが、中身は配信者・配信が主役でゲーム�
 - 無料プランは CPU が1回10msで、Next.js のページ組み立てが収まらない（エラー1102）
 - Next.js は OpenNext（`@opennextjs/cloudflare`）で変換して動かす。Vercel ほど
   そのままは動かないので、更新時は `npm run preview` で手元確認してから出す
+- **Next.js を上げる前に、OpenNext がその版に対応しているかを先に確かめる**
+  （`npm view @opennextjs/cloudflare@<版> peerDependencies`。`next` の範囲を見る）。
+  2026-10-22 に Next.js だけ 16.4.1 に上げたら、OpenNext 1.20.8 が新しい
+  `preview-props.json` を知らず、ビルドは通るのに全ページ 500 になった（preview で発見）。
+  16.4.1 に対応したのは OpenNext 1.20.12 から。OpenNext は wrangler の版も求めるので一緒に上げる
 - 画像最適化は使わない（`next.config.ts` の `images.unoptimized`）。Twitch の
   アイコンは配信元の 70x70 版を使う（`getUsersByLogin`）
 - `*.workers.dev` の既定URLは無効（アカウントのサブドメインに本名が入るため）
