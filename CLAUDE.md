@@ -58,7 +58,7 @@ game-trends のままだが、中身は配信者・配信が主役でゲーム�
 | 言語           | TypeScript                            |
 | スタイル       | Tailwind CSS v4                       |
 | コード整形     | Prettier（保存時に自動整形）          |
-| DB             | Turso (libSQL/SQLite)                 |
+| DB             | Cloudflare D1 (SQLite)                |
 | ホスティング   | Cloudflare Workers 有料（OpenNext）   |
 | 定期実行       | Cloudflare Cron Triggers              |
 | 外部API        | Twitch Helix API、YouTube Data API v3 |
@@ -141,8 +141,10 @@ lib/
 ├── bluesky.ts                  Bluesky への投稿（朝8時に前日のまとめ、12・18・21時にいま見られている配信）
 ├── account-stats.ts            アカウントの直近30日の統計（daily_stats と、ゲームは毎時の記録から）
 ├── snapshot-range.ts           live_snapshots を時刻の範囲で絞る部品、日本時間の日付
-└── db.ts                       Turso接続（読み書き共通の1関数）と、大量書き込みを500件ずつに分ける部品
+├── db.ts                       DB の窓口（読み書き共通の getDbClient）、大量書き込みを500件ずつに分ける部品、IN の変数を100個以下に分ける inChunks
+└── d1.mjs                      D1 を libSQL と同じ形（execute / batch / rows）で使う部品。Worker の中はバインディング、外は HTTP API
 scripts/
+├── db.mjs                      スクリプト用の DB の窓口（D1 の HTTP API。lib/d1.mjs を使う）
 ├── make-bluesky-banner.tsx     Bluesky のプロフィールの背景画像（design/bluesky-banner.png）を作る
 ├── db-migrate.mjs              npm run db:migrate（2026-10 以降に足した表を作る。何度実行しても安全）
 ├── backfill-today.mjs          today_peaks を今日の毎時の記録から埋める（表を作った直後や、反映が止まっていたとき）
@@ -160,7 +162,7 @@ scripts/
 ├── links-rename.mjs            creatorの表示名を直す
 └── link-core.mjs               紐付け処理の共通部品（confirm / add で共用）
 cron-worker/                    毎時の収集・毎日の集計のAPIを呼ぶだけの Worker（Cron Triggers。サイトとは別にデプロイ）
-wrangler.jsonc                  サイト本体の Worker 設定（Custom Domain、R2 バインディング）
+wrangler.jsonc                  サイト本体の Worker 設定（Custom Domain、R2・D1 バインディング）
 open-next.config.ts             OpenNext の設定（fetch の作り置きを R2 に置く）
 ```
 
@@ -175,6 +177,42 @@ DBはSupabase(PostgreSQL)からTurso(libSQL)に移行済み。無料枠の容量
 （Supabase 500MB → Turso 5GB）と、複数プラットフォームのスナップショットが
 増える見込みを踏まえた判断。読み取り/書き込みクライアントの分離もやめた
 （ページからDBを直接読む場面が無く、RLS前提の分離が最初から不要だった）。
+
+**2026-11-07 に Turso から Cloudflare D1 に移した。** Turso は読み取りが無料枠（月5億行）を超え（11月は1日約2,500万行）、
+有料プランにしていた。D1 は Workers 有料プラン（月$5。既に払っている）の枠に収まる：
+
+| 項目（2026-11 の公式の数字）  | Workers 有料プランに込み            | 実測                                   |
+| ----------------------------- | ----------------------------------- | -------------------------------------- |
+| 読み取り                      | 月250億行（超過 $0.001/100万行）    | 月約8億行（込みの約3%）                |
+| 書き込み                      | 月5,000万行（超過 $1/100万行）      | Turso では月約1,200万行（下の注意）    |
+| 容量                          | 5GB（DB 1つの上限は10GB・引き上げ不可） | 約360MB                            |
+
+- 込みの枠は **Workers 有料プランの更新日** にリセットされる（毎月1日ではない）
+- **D1 は索引への書き込みも1行と数える**（live_snapshots は表＋索引2つで1件3行）。Turso の数字より増えるので、書き込みの実測を見ておく
+- 使用量は Cloudflare のダッシュボード（Storage & Databases → D1 → stream-trends → Metrics）か
+  `npx wrangler d1 info stream-trends`。どの SQL が何行読んだかは `npx wrangler d1 insights stream-trends --sort-by=reads`
+  （Turso の Top Queries にあたる。数分遅れて出る）
+- Time Travel で過去30日の任意の時点に戻せる（`npx wrangler d1 time-travel restore stream-trends --timestamp=…`）
+- 場所は APAC（利用者が日本なので）
+
+つなぎ方は `lib/db.ts` の `getDbClient()` の1か所だけ。Worker の中（ページ・cron の API）は D1 のバインディング
+（`wrangler.jsonc` の `DB`）、外（ビルド時の作り置き・`next dev`・手元のスクリプト）は D1 の HTTP API（`D1_API_TOKEN`）で、
+どちらも `lib/d1.mjs` が `@libsql/client` と同じ形（`execute` / `batch` / `rows` / `rowsAffected` / `lastInsertRowid`）で返す。
+呼ぶ側の約90か所を書き換えずに移すためにこの形にした。D1 で気をつけること：
+
+- **1つの SQL に渡せる変数（?）は100個まで。** `IN (?, ?, …)` に件数ぶん並べる所は `inChunks`（lib/db.ts）で分ける。
+  100個を超えると `lib/d1.mjs` が送る前に止める
+- 1文の長さは100KBまで、1回の SQL（batch 全体も）は30秒まで。batch は1つのトランザクション
+- 名前付きの変数（`:name`）は使えない。`sqlite_version()` などの一部の関数、UNION ALL をたくさんつなぐ SQL は通らない
+- **外部キー（REFERENCES）を必ず強制する**（Turso はしていなかった）。移すときに表の定義から REFERENCES を外して挙動をそろえた。
+  新しい表にも REFERENCES は書かない（親の行を消すと書き込みが失敗する）
+- `PRAGMA optimize` は ANALYZE を走らせるので実行しない（下の「読む順の指示」が変わるため）
+
+移した手順：Turso の `/dump`（HTTP。CLI 不要）で SQL を取り、`BEGIN`/`COMMIT`/`PRAGMA` と旧テーブル4つ・REFERENCES を除いて
+`npx wrangler d1 execute stream-trends --remote --file=…`（約320MB・送信込み約7分）。毎時48分のツイキャスの収集の後に写し直し、
+行数を確かめてから Secret の `DB_BACKEND` を `d1` にして切り替えた。移す前に、本物のページと収集が流す SQL 96種類を
+Turso と D1 の両方に流し、結果がすべて同じで読み取り行数もほぼ同じ（225万行）なのを確かめた。
+旧テーブル（`streamers` 系・`youtube_streamers` 系）は移していない。
 
 DBはプラットフォーム非依存の3テーブルに統合済み。`creators`（人物）/
 `accounts`（各プラットフォームのアカウント。`platform` + `platform_id` が一意）/
@@ -229,9 +267,9 @@ Twitch のアーカイブは Twitch 側で7〜60日で消えるので、リン�
   名寄せは、Twitch の上位とは別の人たちが多い（同じ名前の Kick を持つ名寄せ済みの38人は、Kick で配信していなかった）
 
 毎時の書き込みは2,000行を超えるので、名前などが前回と同じならアカウントを上書きしない
-（UPSERT の末尾の `WHERE ... IS NOT excluded...`）。Turso の書き込み枠は月1,000万行。
+（UPSERT の末尾の `WHERE ... IS NOT excluded...`）。D1 の書き込みは月5,000万行まで込み（索引の分も数える）。
 
-**読み取り枠（月5億行）は「読んだ行数」で数える。** 2026-10-14 に半月で75%を使った。原因は、
+**読み取りは「読んだ行数」で数える（D1 も Turso と同じ）。** Turso のころ（無料枠 月5億行）、2026-10-14 に半月で75%を使った。原因は、
 SQLite が表の統計（`ANALYZE`）を持たず、意図と違う順で読んでいたこと（急上昇1回で15万行など）。
 `ANALYZE` は全部の SQL の読み方が一度に変わり、事前に確かめられないのでしていない。代わりに SQL で指示する：
 
@@ -242,13 +280,15 @@ SQLite が表の統計（`ANALYZE`）を持たず、意図と違う順で読ん�
 - 索引を足したら、同じ表のほかの SQL が新しい索引に乗り換えて悪化していないかも測る
   （`youtube_video_checks` で実際に 1,000行 → 2万行になった）
 
-1回の SQL が何行読んだかは、Turso の HTTP API（`/v2/pipeline`）の返事の `rows_read` で分かる
-（`@libsql/client` は返さない）。結果が変わらないかと合わせて、直す前後で必ず測る。
+D1 に移しても、この指示はそのまま効く（移す前に96種類の SQL で読み取り行数と結果が同じなのを確かめた）。
 
-使用量は Turso のダッシュボード（app.turso.tech）の Billing と左下の Usage で見る。DB ごとの読み取りは Databases の一覧。
-請求期間は毎月1日から。無料プランは1つでも上限に当たると**組織全体（ヨルシカも）が止まる**ので、
-2026-10-15 に Developer プラン（月$5.99＋税、読み取り月25億行、超過料金オフ）に変えた。初回は月末までの日割り。
-D1 に移したら戻す。月の途中で無料に戻すとその月の読み取りはそのまま数えられるので、5億行に近い月に戻すと止まる。
+1回の SQL が何行読んだかは、D1 の結果の `meta.rows_read`（`lib/d1.mjs` は `execute` の返り値の `meta` に入れている）か、
+`npx wrangler d1 execute stream-trends --remote --json --command "…"` で分かる。結果が変わらないかと合わせて、直す前後で必ず測る。
+
+Turso（ヨルシカは引き続き使っている。同じ組織）：請求期間は毎月1日から。無料プランは1つでも上限に当たると
+**組織全体（ヨルシカも）が止まる**ので、2026-10-15 に Developer プランにしていた。配信トレンドを D1 に移したので無料に戻す。
+月の途中で無料に戻すとその月の読み取りはそのまま数えられるので、5億行に近い月に戻すと止まる。
+配信トレンドの Turso の DB は、戻し用にしばらく残している（読み書きはゼロ）。
 （Turso の CLI は Windows では WSL が必要なので入れていない）
 
 毎時の記録から作る結果は、`unstable_cache` の鍵に「その配信元の収集の回」（`captureHour`。台帳の
@@ -265,8 +305,8 @@ D1 に移したら戻す。月の途中で無料に戻すとその月の読み�
   まだ無い日を新しい順に10日ずつやる（ページからは書かない）。まとめの形を変えたら `lib/daily.ts` の
   `SUMMARY_VERSION` を上げる（古い形の行は読まずに作り直される）。`?from=` でまとめ直すと、その日以降の保存も消える
 
-Turso のダッシュボードの **Top Queries**（DB → Top Queries）で、本番でどの SQL が何回・何行読んだかを見られる。
-「Rank by」で回数や合計時間の順にも並べ替えられる。読み取りが増えたら、まずここを見る。
+`npx wrangler d1 insights stream-trends --sort-by=reads`（`--sort-by=writes` / `time`、`--timePeriod=1d` など）で、
+本番でどの SQL が何回・何行読んだかを見られる（Turso のころの Top Queries にあたる）。読み取りが増えたら、まずここを見る。
 
 **配信元ごとの違いは「台帳」に集め、ページに `platform === "twitch" ? … : …` を書かない。**
 以前はトップ・急上昇・日付のまとめ・配信者一覧など19ファイルに分かれ道が散らばっていて、
@@ -338,7 +378,9 @@ videos.list の回数は、監視リストの人数と「配信予定・配信�
 一覧の結果を `unstable_cache` で5分作り置きしている（7日分の集計を毎回読まないため）。`/sitemap.xml` も `○` だが1日1回
 （配信者の上位を日ごとの集計14日分から選ぶので、1時間ごとだと読み取り枠を使いすぎる）。
 この3つは**ビルド時に Twitch API と DB を読む**ので、Workers Builds の
-「Build variables」に `TWITCH_CLIENT_*` と `TURSO_*` を入れてある（無いとビルドが失敗する）。
+「Build variables」に `TWITCH_CLIENT_*` と DB の鍵を入れてある（無いとビルドが失敗する）。
+ビルドは Worker の外なので D1 のバインディングが使えず、HTTP API で読む。そのため `D1_API_TOKEN` と `DB_BACKEND=d1` が要る
+（`DB_BACKEND` が無いと Turso を読みにいく。Turso のコードを外すまでの移行中の切り替え）。
 Twitch のトークン取得を作り置き（force-cache）にしたことで `ƒ` から `○` に変わった
 （以前は no-store だったので、トークンを使うページが全部 `ƒ` になっていた）。
 
@@ -485,7 +527,10 @@ PC は「配信元の丸ボタン（左）／地域とカード・リスト（�
 ```
 TWITCH_CLIENT_ID
 TWITCH_CLIENT_SECRET
-TURSO_DATABASE_URL
+DB_BACKEND                 d1（D1 を使う）。無いと Turso。Turso のコードを外すまでの移行中の切り替え
+D1_API_TOKEN               D1 の HTTP API の鍵（Cloudflare の API トークン。D1 の編集だけを許可）。ビルド・next dev・スクリプト用。
+                           本番の Worker はバインディングを使うので要らない。名前を CLOUDFLARE_API_TOKEN にしない（wrangler がデプロイに使ってしまう）
+TURSO_DATABASE_URL         移行前の DB（戻し用。Turso のコードを外したら消す）
 TURSO_AUTH_TOKEN
 YOUTUBE_API_KEY
 TWITCASTING_CLIENT_ID      ツイキャスのアプリ（https://twitcasting.tv/developer.php。Read only）
@@ -652,12 +697,17 @@ probeの結果がある人でも検索は妨げないようにするため。
 9. ~~表示のたびに YouTube API を呼んでいた~~ fetch に revalidate を付けて作り置き済み。
    急上昇の SQL が全履歴を読んでいたのも、時間の範囲で絞るように直した
    （`lib/snapshot-range.ts`）。新しい SQL を書くときも、live_snapshots は
-   必ず captured_at の範囲か最新時刻の一致で絞ること（全件を読むと遅く、Turso の枠も減る）
+   必ず captured_at の範囲か最新時刻の一致で絞ること（全件を読むと遅く、DB の読み取り枠も減る）
 10. ~~ヨルシカのサイトも Cloudflare に移す~~ 移行済み（https://yorushika.sukinote.com）
 11. ~~アクセス解析~~ Cloudflare Web Analytics の自動設定（sukinote.com 単位）で計測中。
     Cloudflare が配信時にスクリプトを差し込むので、コードには書かない（書くと二重計測になる）。
     新しいサブドメインのサイトも自動で対象になる
 12. ~~デプロイの自動化~~ Workers Builds で main への push ごとに自動デプロイ
+15. **Turso の後片付け（D1 に移した 2026-11-07 から1週間ほど様子を見てから）**
+    - Turso を無料プランに戻す（その月の読み取りが5億行より十分少ないうちに。上の「Turso」の項）
+    - `lib/db.ts` の Turso の分かれ道と `DB_BACKEND`、移行の確認用の `DB_LOG_FILE`、`scripts/db.mjs` の Turso、
+      `@libsql/client`、`TURSO_*` の Secret とビルド変数を消す
+    - 配信トレンドの Turso の DB を消す時期はオーナーが決める（消す前に `/dump` で SQL を取って残しておく）
 
 ## 方針
 
