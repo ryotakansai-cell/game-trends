@@ -18,7 +18,7 @@ import { SameGameStreamers } from "@/components/SameGameStreamers";
 import { loadStatsExtras, pickSelectedDay } from "@/lib/stats-extras";
 import { dayTitle } from "@/lib/daily";
 import { getAccountStats } from "@/lib/account-stats";
-import { getGamesByIds } from "@/lib/twitch";
+import { getGamesByIds, PER_PAGE_NO_CACHE } from "@/lib/twitch";
 
 /** 本人アカウントごとの配信の記録をまとめる。
  *  切り抜き・アーカイブの同接は本人の数字ではないので含めない。
@@ -52,8 +52,10 @@ async function loadCreatorStats(accounts: PlatformAccount[]) {
       .filter((r) => r.stats !== null)
       .sort((x, y) => y.stats!.hoursLive - x.stats!.hoursLive)[0] ?? null;
 
+  // その人のよく遊ぶゲームの並びは人ごとに違い、作り置きしても使い回されないので毎回聞く
   const games = await getGamesByIds(
     main?.stats?.topGames.map((g) => g.gameId) ?? [],
+    PER_PAGE_NO_CACHE,
   ).catch(() => new Map());
 
   return {

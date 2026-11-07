@@ -10,6 +10,7 @@ import {
   getClipsByBroadcaster,
   getVideosByUser,
   getGamesByIds,
+  PER_PAGE_NO_CACHE,
   streamThumb,
   videoThumb,
   elapsedSince,
@@ -32,8 +33,10 @@ async function loadStats(twitchUserId: string) {
   if (accountId === null)
     return { accountId: null, stats: null, games: new Map() };
   const stats = await getAccountStats(accountId);
+  // その人のよく遊ぶゲームの並びは人ごとに違い、作り置きしても使い回されないので毎回聞く
   const games = await getGamesByIds(
     stats?.topGames.map((g) => g.gameId) ?? [],
+    PER_PAGE_NO_CACHE,
   ).catch(() => new Map());
   return { accountId, stats, games };
 }

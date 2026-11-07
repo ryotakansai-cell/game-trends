@@ -74,6 +74,16 @@ export async function getTwitchAuth() {
   return { clientId, token };
 }
 
+/** 1人（1ゲーム）分のページでだけ使う返事は、作り置きしない（0）。
+ *  作り置きは R2 に1回書くごとに課金される（100万回 $4.50。月100万回までは無料）。
+ *  配信者・ゲームのページは何万枚もあり、ほとんどがクローラーに1回見られるだけなので、
+ *  書いた作り置きがほぼ使い回されない。2026-11-05 の実測では、新しい配信者ページを
+ *  1回開くと R2 に5〜7回書き込んでいて、OpenAI のクローラーの巡回で1日約9万回になっていた。
+ *  Twitch API は無料なので、毎回聞く方が安い（上限は1分あたり800回）。
+ *  トップやランキングのように大勢が見る返事は、今までどおり作り置きする */
+export const PER_PAGE_NO_CACHE = 0;
+
+/** revalidate 秒だけ返事を作り置きする。0 は作り置きしない（lib/kick.ts と同じ形） */
 async function twitchFetch<T>(path: string, revalidate = 300): Promise<T[]> {
   const { clientId } = getCredentials();
   const token = await getAccessToken();
@@ -83,7 +93,7 @@ async function twitchFetch<T>(path: string, revalidate = 300): Promise<T[]> {
       "Client-Id": clientId,
       Authorization: `Bearer ${token}`,
     },
-    next: { revalidate },
+    ...(revalidate > 0 ? { next: { revalidate } } : { cache: "no-store" }),
   });
 
   if (!res.ok) {
@@ -252,7 +262,12 @@ export async function getTopStreams(options?: {
   if (options?.language) params.set("language", options.language);
   if (options?.gameId) params.set("game_id", options.gameId);
 
-  return twitchFetch<TwitchStreamFull>(`/streams?${params.toString()}`);
+  // ゲームで絞った一覧はそのゲームのページでしか使わないので作り置きしない。
+  // 絞らない一覧（トップ・ライブ）は大勢が見るので5分作り置きする
+  return twitchFetch<TwitchStreamFull>(
+    `/streams?${params.toString()}`,
+    options?.gameId ? PER_PAGE_NO_CACHE : 300,
+  );
 }
 
 /** サムネイルURLのプレースホルダを実サイズに置換する */
@@ -286,23 +301,29 @@ export function elapsedSince(startedAt: string) {
 }
 /** 特定のゲーム1件を取得する */
 export async function getGameById(gameId: string) {
-  const games = await twitchFetch<TwitchGame>(`/games?id=${gameId}`);
+  // ゲームの詳細ページ（/games/[id]）だけで使う
+  const games = await twitchFetch<TwitchGame>(
+    `/games?id=${gameId}`,
+    PER_PAGE_NO_CACHE,
+  );
   return games[0] ?? null;
 }
 
 /** 複数のゲームをまとめて取得する（1回100件まで）。
  *  配信者の「よく遊ぶゲーム」は上位60のゲームに入らないことも多く、
  *  DB の games 表に名前が無いので API から引く。ゲーム名はめったに変わらないので1日作り置きする */
-export async function getGamesByIds(ids: string[]) {
+export async function getGamesByIds(ids: string[], revalidate = 86400) {
   const map = new Map<string, TwitchGame>();
   const unique = [...new Set(ids)].slice(0, 100);
   if (unique.length === 0) return map;
 
   const params = new URLSearchParams();
   unique.forEach((id) => params.append("id", id));
+  // 作り置きの鍵は「ID の並び」なので、配信者ごとに違う並び（その人のよく遊ぶゲーム）は
+  // 使い回されない。そういう呼び出しは PER_PAGE_NO_CACHE を渡す
   const games = await twitchFetch<TwitchGame>(
     `/games?${params.toString()}`,
-    86400,
+    revalidate,
   );
   games.forEach((g) => map.set(g.id, g));
   return map;
@@ -398,9 +419,12 @@ export type TwitchVideo = {
 };
 
 /** ログイン名から1人分のユーザー情報を取得 */
+// ここから下の1人分の取得（ユーザー・配信中か・クリップ・アーカイブ）は、
+// 配信者ページと名寄せした人物のページでしか使わないので作り置きしない（PER_PAGE_NO_CACHE の説明）
 export async function getUserByLogin(login: string) {
   const users = await twitchFetch<TwitchUser>(
     `/users?login=${encodeURIComponent(login)}`,
+    PER_PAGE_NO_CACHE,
   );
   return users[0] ?? null;
 }
@@ -409,6 +433,7 @@ export async function getUserByLogin(login: string) {
 export async function getStreamByLogin(login: string) {
   const streams = await twitchFetch<TwitchStreamFull>(
     `/streams?user_login=${encodeURIComponent(login)}`,
+    PER_PAGE_NO_CACHE,
   );
   return streams[0] ?? null;
 }
@@ -428,7 +453,10 @@ export async function getClipsByBroadcaster(
     started_at: startedAt,
   });
 
-  return twitchFetch<TwitchClip>(`/clips?${params.toString()}`);
+  return twitchFetch<TwitchClip>(
+    `/clips?${params.toString()}`,
+    PER_PAGE_NO_CACHE,
+  );
 }
 
 /** 指定した期間に作られた人気クリップ（配信者ページで、グラフの日を選んだとき用） */
@@ -446,7 +474,10 @@ export async function getClipsInRange(
     started_at: iso(from),
     ended_at: iso(to),
   });
-  return twitchFetch<TwitchClip>(`/clips?${params.toString()}`);
+  return twitchFetch<TwitchClip>(
+    `/clips?${params.toString()}`,
+    PER_PAGE_NO_CACHE,
+  );
 }
 
 /** 過去の配信アーカイブを取得 */
@@ -458,7 +489,10 @@ export async function getVideosByUser(userId: string, limit = 6) {
     sort: "time",
   });
 
-  return twitchFetch<TwitchVideo>(`/videos?${params.toString()}`);
+  return twitchFetch<TwitchVideo>(
+    `/videos?${params.toString()}`,
+    PER_PAGE_NO_CACHE,
+  );
 }
 
 /** 動画サムネのプレースホルダを置換（%{width} 形式にも対応） */

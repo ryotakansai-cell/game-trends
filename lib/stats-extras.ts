@@ -10,6 +10,7 @@ import {
   getGamesByIds,
   getVideosByUser,
   isRealGame,
+  PER_PAGE_NO_CACHE,
   type TwitchClip,
   type TwitchGame,
   type TwitchVideo,
@@ -17,6 +18,9 @@ import {
 import { accountKey } from "@/lib/platforms";
 import { getAccountIcons } from "@/lib/platform-loaders";
 import type { SameGameEntry } from "@/components/SameGameStreamers";
+
+/** 「同じゲームの人」に出す人数（getSameGameStreamers の既定と同じ） */
+const SAME_GAME_SHOWN = 6;
 
 /** グラフで選べる日か（2026-10-10 の形で、グラフの期間内の配信した日） */
 export function pickSelectedDay(stats: AccountStats | null, day?: string) {
@@ -57,10 +61,15 @@ export async function loadStatsExtras({
     ? new Date(dayStart.getTime() + 24 * 3600 * 1000)
     : undefined;
 
-  const [heatmap, sameGameRows, dayStreams, vods, clips] = await Promise.all([
+  const [heatmap, sameGamePool, dayStreams, vods, clips] = await Promise.all([
     getHourHeatmap(accountIds).catch(() => undefined),
+    // 本人を除く前の、ゲームごとに同じ並び（1人多めに取る）。下のアイコンの取得を
+    // 同じゲームの配信者ページどうしで使い回すため。本人を除いてから取ると、
+    // ページごとに並びが変わり、アイコンの作り置きが人数分できてしまう
     topGameId
-      ? getSameGameStreamers(topGameId, accountIds).catch(() => [])
+      ? getSameGameStreamers(topGameId, [], SAME_GAME_SHOWN + 1).catch(
+          () => [],
+        )
       : Promise.resolve([]),
     selectedDay
       ? getDayStreams(accountIds, selectedDay).catch(() => [] as DayStream[])
@@ -89,19 +98,25 @@ export async function loadStatsExtras({
     .filter((id): id is string => id !== null && !games.has(id));
   const allGames = new Map(games);
   if (missing.length > 0 || (topGameId && !games.has(topGameId))) {
-    const more = await getGamesByIds([
-      ...missing,
-      ...(topGameId ? [topGameId] : []),
-    ]).catch(() => new Map<string, TwitchGame>());
+    // 足りない分の並びはページごとに違うので作り置きしない（lib/twitch.ts の PER_PAGE_NO_CACHE）
+    const more = await getGamesByIds(
+      [...missing, ...(topGameId ? [topGameId] : [])],
+      PER_PAGE_NO_CACHE,
+    ).catch(() => new Map<string, TwitchGame>());
     more.forEach((g, id) => allGames.set(id, g));
   }
 
-  // 同じゲームの人のアイコン（Twitch は100人まで1回、YouTube は50件で1ユニット・1日作り置き）
-  const icons = await getAccountIcons(sameGameRows);
-  const sameGame: SameGameEntry[] = sameGameRows.map((r) => ({
-    ...r,
-    iconUrl: icons.get(accountKey(r)),
-  }));
+  // 同じゲームの人のアイコン（Twitch は100人まで1回、YouTube は50件で1ユニット・1日作り置き）。
+  // 本人を除く前の並びで取り、本人を除くのはそのあと
+  const icons = await getAccountIcons(sameGamePool);
+  const self = new Set(accountIds);
+  const sameGame: SameGameEntry[] = sameGamePool
+    .filter((r) => !self.has(r.accountId))
+    .slice(0, SAME_GAME_SHOWN)
+    .map((r) => ({
+      ...r,
+      iconUrl: icons.get(accountKey(r)),
+    }));
 
   return {
     heatmap,
