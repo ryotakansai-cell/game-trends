@@ -3,13 +3,10 @@
 // 「〇〇_チャンネル」のような配信タイトル寄りの名前が入ってしまうことがある。
 //
 // 使い方: npm run links:rename -- 10 加藤純一
-import { createClient } from "@libsql/client";
+import { getScriptDb } from "./db.mjs";
 import { printSummary } from "./link-core.mjs";
 
-const db = createClient({
-  url: process.env.TURSO_DATABASE_URL,
-  authToken: process.env.TURSO_AUTH_TOKEN,
-});
+const db = getScriptDb();
 
 const [idPart, ...nameParts] = process.argv.slice(2);
 // 名前に空白が入っても拾えるよう、残りの引数を全部つなげる

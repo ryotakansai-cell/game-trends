@@ -13,13 +13,10 @@
 //   npm run links:twitcasting -- 50     上位50人を新しく試し、未確定の候補を一覧にする（既定30人）
 //   npm run links:twitcasting -- 0      新しくは試さず、未確定の候補の一覧だけ
 // 確定は YouTube と同じく npm run links:confirm -- <候補id> …（却下は <候補id>:reject）
-import { createClient } from "@libsql/client";
+import { getScriptDb } from "./db.mjs";
 import { normalize, similarity } from "./name-match.mjs";
 
-const db = createClient({
-  url: process.env.TURSO_DATABASE_URL,
-  authToken: process.env.TURSO_AUTH_TOKEN,
-});
+const db = getScriptDb();
 const id = process.env.TWITCASTING_CLIENT_ID;
 const secret = process.env.TWITCASTING_CLIENT_SECRET;
 if (!id || !secret) {

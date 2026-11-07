@@ -1,7 +1,7 @@
 // ゲームを「遊んでいる人数」の記録（Steam・Roblox など）。プラットフォームをまたいで共通。
 // play_titles（マスタ）と play_snapshots（毎時の人数）の2つの表を使う。
 // 配信の accounts / live_snapshots と同じ考え方で、名前や画像は毎時保存しない。
-import { getDbClient, batchInChunks } from "@/lib/db";
+import { getDbClient, batchInChunks, inChunks } from "@/lib/db";
 
 // App Store は「セールス」と「無料」で順位表が別なので、2つの platform に分けて持つ
 // （同じアプリが両方に入ると、マスタの行も2つになる）
@@ -34,13 +34,16 @@ export async function titlesToRefresh(
   if (externalIds.length === 0) return [];
   const db = getDbClient();
   const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
-  const r = await db.execute({
-    sql: `SELECT external_id FROM play_titles
-          WHERE platform = ? AND updated_at >= ?
-            AND external_id IN (${externalIds.map(() => "?").join(",")})`,
-    args: [platform, since, ...externalIds],
-  });
-  const fresh = new Set(r.rows.map((row) => String(row.external_id)));
+  // Steam・Roblox の上位約100本＋platform・日時で、D1 の変数の上限（100個）を超えるので分ける
+  const rows = await inChunks(externalIds, 2, (chunk) =>
+    db.execute({
+      sql: `SELECT external_id FROM play_titles
+            WHERE platform = ? AND updated_at >= ?
+              AND external_id IN (${chunk.map(() => "?").join(",")})`,
+      args: [platform, since, ...chunk],
+    }),
+  );
+  const fresh = new Set(rows.map((row) => String(row.external_id)));
   return externalIds.filter((id) => !fresh.has(id));
 }
 

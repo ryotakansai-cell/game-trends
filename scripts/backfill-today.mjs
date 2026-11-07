@@ -5,8 +5,9 @@
 // 収集のコードを出す前の時間の分は空になる。そのときに1回だけ流す（今日の毎時の記録を読むので、夜だと約10万行）。
 // 前より同接が多いときだけ書き換える形なので、何度流しても結果は変わらない。
 // 日本の配信への絞り込みはページで読むときにやるので、ここでは全部入れる
-const url = process.env.TURSO_DATABASE_URL.replace(/^libsql:/, "https:");
-const token = process.env.TURSO_AUTH_TOKEN;
+import { getScriptDb } from "./db.mjs";
+
+const db = getScriptDb();
 
 // 日本時間の今日の0時（UTC の ISO 文字列）と、日付
 const jstNow = new Date(Date.now() + 9 * 3600 * 1000);
@@ -32,28 +33,10 @@ const sql = `
     peak_at = excluded.peak_at
   WHERE excluded.peak_viewers > today_peaks.peak_viewers`;
 
-const res = await fetch(`${url}/v2/pipeline`, {
-  method: "POST",
-  headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-  body: JSON.stringify({
-    requests: [
-      {
-        type: "execute",
-        stmt: {
-          sql,
-          args: [
-            { type: "text", value: from },
-            { type: "text", value: day },
-          ],
-        },
-      },
-      { type: "close" },
-    ],
-  }),
-});
-const r = (await res.json()).results[0];
-if (r.type !== "ok") throw new Error(JSON.stringify(r.error));
-const out = r.response.result;
+const r = await db.execute({ sql, args: [from, day] });
+// 読み取り・書き込みの行数は D1 だけが返す（@libsql/client は返さない）
+const m = r.meta;
 console.log(
-  `${day}（${from} から）: ${out.affected_row_count} 行を入れた・書き換えた / 読み取り ${out.rows_read} 行・書き込み ${out.rows_written} 行`,
+  `${day}（${from} から）: ${r.rowsAffected} 行を入れた・書き換えた` +
+    (m ? ` / 読み取り ${m.rows_read} 行・書き込み ${m.rows_written} 行` : ""),
 );

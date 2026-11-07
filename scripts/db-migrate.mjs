@@ -3,12 +3,9 @@
 //
 // 既存の表（accounts / live_snapshots など）は手で作ったので、ここには
 // 2026-10 以降に足した表だけを書いている。
-import { createClient } from "@libsql/client";
+import { getScriptDb } from "./db.mjs";
 
-const db = createClient({
-  url: process.env.TURSO_DATABASE_URL,
-  authToken: process.env.TURSO_AUTH_TOKEN,
-});
+const db = getScriptDb();
 
 await db.batch(
   [

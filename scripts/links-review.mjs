@@ -8,13 +8,10 @@
 // 間違えたときに原因を特定できないため。
 //
 // 使い方: npm run links:review
-import { createClient } from "@libsql/client";
+import { getScriptDb } from "./db.mjs";
 import { normalize, similarity } from "./name-match.mjs";
 
-const db = createClient({
-  url: process.env.TURSO_DATABASE_URL,
-  authToken: process.env.TURSO_AUTH_TOKEN,
-});
+const db = getScriptDb();
 const apiKey = process.env.YOUTUBE_API_KEY;
 
 // ============================================

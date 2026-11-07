@@ -5,12 +5,9 @@
 //         npm run suggest-links -- 10  （10人だけ）
 //
 // 注意: 1人あたり search.list = 100ユニット消費する。1日の無料枠は10,000。
-import { createClient } from "@libsql/client";
+import { getScriptDb } from "./db.mjs";
 
-const db = createClient({
-  url: process.env.TURSO_DATABASE_URL,
-  authToken: process.env.TURSO_AUTH_TOKEN,
-});
+const db = getScriptDb();
 const apiKey = process.env.YOUTUBE_API_KEY;
 
 if (!apiKey) {

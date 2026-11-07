@@ -4,13 +4,10 @@
 //   npm run links:confirm -- 4 7 10           本人(self)として紐付け
 //   npm run links:confirm -- 5:clip 6:archive 切り抜き・アーカイブとして紐付け
 //   npm run links:confirm -- 9:reject         別人なので却下（以後表示されない）
-import { createClient } from "@libsql/client";
+import { getScriptDb } from "./db.mjs";
 import { linkAccount, printSummary } from "./link-core.mjs";
 
-const db = createClient({
-  url: process.env.TURSO_DATABASE_URL,
-  authToken: process.env.TURSO_AUTH_TOKEN,
-});
+const db = getScriptDb();
 
 // 引数は「候補id」または「候補id:関係」の形で受け取る
 const tokens = process.argv.slice(2);

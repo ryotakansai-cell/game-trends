@@ -1,5 +1,5 @@
 import { unstable_cache } from "next/cache";
-import { getDbClient } from "@/lib/db";
+import { getDbClient, inChunks } from "@/lib/db";
 import { jstDay } from "@/lib/snapshot-range";
 import { toPlatformId, type PlatformId } from "@/lib/platforms";
 
@@ -193,18 +193,21 @@ async function queryDailySummary(day: string): Promise<DailySummary> {
     ...new Set(Object.values(lists).flatMap((l) => l.map((e) => e.accountId))),
   ];
   if (ids.length > 0) {
-    const titles = await db.execute({
-      sql: `SELECT account_id, title FROM (
-              SELECT account_id, title,
-                ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY viewers DESC, captured_at) AS rn
-              FROM live_snapshots
-              WHERE account_id IN (${ids.map(() => "?").join(",")})
-                AND captured_at >= ? AND captured_at < ? AND title IS NOT NULL
-            ) WHERE rn = 1`,
-      args: [...ids, from, to],
-    });
+    // 1人ずつ独立に引く SQL なので、D1 の変数の上限（100個）に合わせて分けても結果は同じ
+    const titles = await inChunks(ids, 2, (chunk) =>
+      db.execute({
+        sql: `SELECT account_id, title FROM (
+                SELECT account_id, title,
+                  ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY viewers DESC, captured_at) AS rn
+                FROM live_snapshots
+                WHERE account_id IN (${chunk.map(() => "?").join(",")})
+                  AND captured_at >= ? AND captured_at < ? AND title IS NOT NULL
+              ) WHERE rn = 1`,
+        args: [...chunk, from, to],
+      }),
+    );
     const byId = new Map(
-      titles.rows.map((r) => [Number(r.account_id), String(r.title)]),
+      titles.map((r) => [Number(r.account_id), String(r.title)]),
     );
     for (const e of Object.values(lists).flat()) {
       e.peakTitle = byId.get(e.accountId) ?? e.peakTitle;

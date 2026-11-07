@@ -6,12 +6,9 @@
 // 名前の類似度や説明欄を見て ？ や × に落とすので、そのまま流してよい。
 //
 // 使い方: npm run links:probe -- 70   （既定30人）
-import { createClient } from "@libsql/client";
+import { getScriptDb } from "./db.mjs";
 
-const db = createClient({
-  url: process.env.TURSO_DATABASE_URL,
-  authToken: process.env.TURSO_AUTH_TOKEN,
-});
+const db = getScriptDb();
 const apiKey = process.env.YOUTUBE_API_KEY;
 
 if (!apiKey) {

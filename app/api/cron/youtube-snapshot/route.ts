@@ -78,8 +78,9 @@ export async function GET(request: NextRequest) {
     // 配信のたびに新しい動画IDが振られるので、新しい配信は必ず「初めて見るID」として残る
     const feedIds = [...new Set(feeds.videoIds)].filter((id) => !found.has(id));
     const done = new Set<string>();
-    for (let i = 0; i < feedIds.length; i += 500) {
-      const chunk = feedIds.slice(i, i + 500);
+    // 100件ずつ：D1 は1つの SQL に渡せる変数が100個まで（Turso のころは500件ずつだった）
+    for (let i = 0; i < feedIds.length; i += 100) {
+      const chunk = feedIds.slice(i, i + 100);
       const r = await db.execute({
         // +status は「status の索引を使わない」という指示。(status, checked_at) の索引を足したら、
         // SQLite が動画IDの主キーで引く代わりに status='done' の全件（約2万行）を読むようになった

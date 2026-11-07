@@ -11,12 +11,9 @@
 // 使い方:
 //   npm run links:kick          候補を集めて、未確定の候補を一覧にする
 // 確定は YouTube・ツイキャスと同じく npm run links:confirm -- <候補id> …（却下は <候補id>:reject）
-import { createClient } from "@libsql/client";
+import { getScriptDb } from "./db.mjs";
 
-const db = createClient({
-  url: process.env.TURSO_DATABASE_URL,
-  authToken: process.env.TURSO_AUTH_TOKEN,
-});
+const db = getScriptDb();
 const now = new Date().toISOString();
 
 // ---- Kick と Twitch のトークン（アプリの鍵だけでもらう） ----
@@ -118,15 +115,17 @@ const twitchLogins = [
       .filter((l) => kickChannelBySlug.has(l.toLowerCase())),
   ]),
 ];
-const twitchAccounts = twitchLogins.length
-  ? (
-      await db.execute({
-        sql: `SELECT id, login, display_name, creator_id FROM accounts
-              WHERE platform = 'twitch' AND login IN (${twitchLogins.map(() => "?").join(",")})`,
-        args: twitchLogins,
-      })
-    ).rows
-  : [];
+// D1 は1つの SQL に渡せる変数が100個までなので、100人ずつ引く
+const twitchAccounts = [];
+for (let i = 0; i < twitchLogins.length; i += 100) {
+  const chunk = twitchLogins.slice(i, i + 100);
+  const r = await db.execute({
+    sql: `SELECT id, login, display_name, creator_id FROM accounts
+          WHERE platform = 'twitch' AND login IN (${chunk.map(() => "?").join(",")})`,
+    args: chunk,
+  });
+  twitchAccounts.push(...r.rows);
+}
 const twitchAccountByLogin = new Map(
   twitchAccounts.map((r) => [String(r.login).toLowerCase(), r]),
 );

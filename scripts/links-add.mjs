@@ -10,13 +10,10 @@
 // 第3引数（関係）を省くと self（本人）になる。
 //
 // 消費: channels.list 1ユニットのみ（検索の100分の1）
-import { createClient } from "@libsql/client";
+import { getScriptDb } from "./db.mjs";
 import { linkAccount, printSummary } from "./link-core.mjs";
 
-const db = createClient({
-  url: process.env.TURSO_DATABASE_URL,
-  authToken: process.env.TURSO_AUTH_TOKEN,
-});
+const db = getScriptDb();
 const apiKey = process.env.YOUTUBE_API_KEY;
 
 const [source, target, relation = "self"] = process.argv.slice(2);

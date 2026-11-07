@@ -5,13 +5,10 @@
 // 半手動のパイプラインでは「取り消せること」が安心して進める前提になる。
 //
 // 使い方: npm run links:undo -- 158 156 132
-import { createClient } from "@libsql/client";
+import { getScriptDb } from "./db.mjs";
 import { printSummary } from "./link-core.mjs";
 
-const db = createClient({
-  url: process.env.TURSO_DATABASE_URL,
-  authToken: process.env.TURSO_AUTH_TOKEN,
-});
+const db = getScriptDb();
 
 const ids = process.argv.slice(2).map(Number).filter(Number.isInteger);
 

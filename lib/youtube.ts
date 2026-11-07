@@ -1,5 +1,5 @@
 import { unstable_cache } from "next/cache";
-import { getDbClient } from "@/lib/db";
+import { getDbClient, inChunks } from "@/lib/db";
 import { captureHour } from "@/lib/snapshot-range";
 import { PLATFORMS } from "@/lib/platforms";
 import type { PlatformAccount, PlatformContent } from "@/lib/platform-content";
@@ -422,31 +422,32 @@ async function getLiveByAccountIds(accountIds: number[]) {
   if (accountIds.length === 0) return map;
 
   const db = getDbClient();
-  // IN (?, ?, ?) の ? を件数ぶん作る
-  const placeholders = accountIds.map(() => "?").join(",");
   // 2時間以上前の記録なら、もう配信は終わっているとみなす。
   // 以前は対象アカウントの全履歴を読んでから2時間で絞っていたので、先に範囲で絞る
   const since = new Date(Date.now() - 2 * 3600 * 1000).toISOString();
 
-  const result = await db.execute({
-    sql: `
-      WITH recent AS (
-        SELECT account_id, title, viewers, content_id, captured_at,
-          ROW_NUMBER() OVER (
-            PARTITION BY account_id ORDER BY captured_at DESC, viewers DESC
-          ) AS rn
-        FROM live_snapshots
-        WHERE account_id IN (${placeholders})
-          AND captured_at >= ?
-      )
-      SELECT account_id, title, viewers, content_id
-      FROM recent
-      WHERE rn = 1
-    `,
-    args: [...accountIds, since],
-  });
+  // アカウントごとに独立に「最新の1件」を引くので、D1 の変数の上限（100個）に合わせて分けても結果は同じ
+  const rows = await inChunks(accountIds, 1, (chunk) =>
+    db.execute({
+      sql: `
+        WITH recent AS (
+          SELECT account_id, title, viewers, content_id, captured_at,
+            ROW_NUMBER() OVER (
+              PARTITION BY account_id ORDER BY captured_at DESC, viewers DESC
+            ) AS rn
+          FROM live_snapshots
+          WHERE account_id IN (${chunk.map(() => "?").join(",")})
+            AND captured_at >= ?
+        )
+        SELECT account_id, title, viewers, content_id
+        FROM recent
+        WHERE rn = 1
+      `,
+      args: [...chunk, since],
+    }),
+  );
 
-  for (const r of result.rows) {
+  for (const r of rows) {
     map.set(Number(r.account_id), {
       title: String(r.title),
       viewers: Number(r.viewers),

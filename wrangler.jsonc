@@ -38,6 +38,19 @@
     },
   ],
 
+  // DB（Cloudflare D1）。Turso から移した（2026-11）。Turso は読み取りが無料枠を超えて
+  // 有料プランにしていたが、D1 は Workers 有料プランの枠（読み取り月250億行）に収まるため。
+  // 場所は利用者が日本なので apac。remote: true は、手元の `npm run preview` でも
+  // 本番の D1 を使うため（手元に空の DB を作っても確かめられることが少ない）
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "stream-trends",
+      "database_id": "48f47f5d-a34b-4fbe-ab5c-62104bf09e71",
+      "remote": true,
+    },
+  ],
+
   // 実行ログをダッシュボードで見られるようにする（不具合の調査用）
   "observability": {
     "enabled": true,

@@ -27,7 +27,7 @@ import {
   getTwitcastingContent,
   toHttps,
 } from "@/lib/twitcasting";
-import { getDbClient } from "@/lib/db";
+import { getDbClient, inChunks } from "@/lib/db";
 import {
   getLivestreams,
   getKickContent,
@@ -54,14 +54,18 @@ export type LiveEntry = AccountRef & {
 async function iconsFromDb(platform: PlatformId, accounts: AccountRef[]) {
   if (accounts.length === 0) return new Map<string, string>();
   const ids = [...new Set(accounts.map((a) => a.platformId))];
-  const r = await getDbClient().execute({
-    sql: `SELECT platform_id, icon_url FROM accounts
-          WHERE platform = ? AND icon_url IS NOT NULL
-            AND platform_id IN (${ids.map(() => "?").join(",")})`,
-    args: [platform, ...ids],
-  });
+  // Kick は上位200件ほどになるので、D1 の変数の上限（100個）に合わせて分ける
+  const db = getDbClient();
+  const rows = await inChunks(ids, 1, (chunk) =>
+    db.execute({
+      sql: `SELECT platform_id, icon_url FROM accounts
+            WHERE platform = ? AND icon_url IS NOT NULL
+              AND platform_id IN (${chunk.map(() => "?").join(",")})`,
+      args: [platform, ...chunk],
+    }),
+  );
   return new Map(
-    r.rows.map((row) => [String(row.platform_id), String(row.icon_url)]),
+    rows.map((row) => [String(row.platform_id), String(row.icon_url)]),
   );
 }
 
