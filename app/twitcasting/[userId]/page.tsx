@@ -12,15 +12,29 @@ type Props = {
   searchParams: Promise<{ day?: string }>;
 };
 
-// ツイキャスのユーザーIDは数字。形が違うURLは DB を引かずに404にする
-const USER_ID = /^\d{1,24}$/;
+// ツイキャスのユーザーIDは数字だけとは限らない。X・Google・Instagram・Facebook で
+// ログインしている人は「c:名前」「g:数字」「i:数字」「f:数字」の形になる（2026-11-11 に DB で確認：
+// 3,126人のうち839人がこの形で、数字だけと決めつけていたため全員のページが404だった）。
+// 形が明らかに違うURLは、これまでどおり DB を引かずに404にする
+const USER_ID = /^(?:[a-z]:)?[A-Za-z0-9_]{1,40}$/;
+
+/** URL の ID を DB と同じ形に戻す。Next.js は同じリクエストの中でも、generateMetadata には
+ *  「c:mwmwm_」、ページ本体には「c%3Amwmwm_」（: を %3A にした形）を渡すことがあった
+ *  （2026-11-11 に next dev で確認）。戻さないとページ本体だけ ID の形のチェックで落ちて404になる */
+function normalizeUserId(raw: string) {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw; // 壊れた %xx は戻せないので、そのまま形のチェックで落とす
+  }
+}
 
 const loadAccount = cache((userId: string) =>
   USER_ID.test(userId) ? getAccountInfo("twitcasting", userId) : null,
 );
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { userId } = await params;
+  const userId = normalizeUserId((await params).userId);
   const account = await loadAccount(userId);
   if (!account) return { title: "見つかりません" };
 
@@ -40,7 +54,7 @@ export default async function TwitcastingUserPage({
   params,
   searchParams,
 }: Props) {
-  const { userId } = await params;
+  const userId = normalizeUserId((await params).userId);
   const { day } = await searchParams;
   const account = await loadAccount(userId);
   // 記録に無い人はページを作らない
