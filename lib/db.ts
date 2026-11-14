@@ -1,4 +1,3 @@
-import { createClient } from "@libsql/client";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { createD1HttpClient, wrapD1Binding, MAX_PARAMS } from "./d1.mjs";
 
@@ -21,7 +20,7 @@ export type SnapshotRow = {
 };
 
 // ============================================
-// DB の窓口の型（Turso の @libsql/client と D1 で共通にしている部分だけ）
+// DB の窓口の型（Turso のころの @libsql/client と同じ形。呼ぶ側の約90か所を書き換えずに D1 へ移すため）
 // ============================================
 export type Value = null | string | number | bigint | ArrayBuffer;
 export type Row = Record<string, Value>;
@@ -85,48 +84,9 @@ function d1Binding(): D1Like | undefined {
 }
 
 /** DB の窓口。読み書き共通。
- *  DB_BACKEND=d1 なら D1、それ以外は Turso（移行中だけの切り替え。Secret を変えるだけで行き来できるようにした） */
+ *  Worker の中ではバインディング、外（ビルド時・next dev）では HTTP API で D1 につなぐ。
+ *  2026-11-07 に Turso から移し、1週間様子を見てから Turso への切り替え（DB_BACKEND）を外した */
 export function getDbClient(): Db {
-  return withLog(pickDb());
-}
-
-function pickDb(): Db {
-  if (process.env.DB_BACKEND === "d1") {
-    const binding = d1Binding();
-    return (binding ? wrapD1Binding(binding) : createD1HttpClient()) as Db;
-  }
-
-  const url = process.env.TURSO_DATABASE_URL;
-  const authToken = process.env.TURSO_AUTH_TOKEN;
-  if (!url || !authToken) {
-    throw new Error("Tursoの接続情報が未設定です");
-  }
-  return createClient({ url, authToken }) as unknown as Db;
-}
-
-/** 移行の確認用（一時的）：DB_LOG_FILE を指定して next dev を動かすと、流した SQL と引数を1行1件の JSON で書き出す。
- *  Turso と D1 で読み取り行数を比べるのに、本物のページが流す SQL をそのまま使うため。
- *  本番では指定しないので何もしない。Turso を外すときに一緒に消す */
-function withLog(db: Db): Db {
-  const file = process.env.DB_LOG_FILE;
-  if (!file) return db;
-  const log = async (stmts: Statement[]) => {
-    const { appendFile } = await import("node:fs/promises");
-    const lines = stmts.map((s) =>
-      JSON.stringify(typeof s === "string" ? { sql: s, args: [] } : s, (_, v) =>
-        typeof v === "bigint" ? Number(v) : v,
-      ),
-    );
-    await appendFile(file, lines.join("\n") + "\n");
-  };
-  return {
-    async execute(stmt) {
-      await log([stmt]);
-      return db.execute(stmt);
-    },
-    async batch(stmts, mode) {
-      await log(stmts);
-      return db.batch(stmts, mode);
-    },
-  };
+  const binding = d1Binding();
+  return (binding ? wrapD1Binding(binding) : createD1HttpClient()) as Db;
 }

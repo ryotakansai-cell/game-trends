@@ -292,6 +292,8 @@ Turso（ヨルシカは引き続き使っている。同じ組織）：請求期
 **組織全体（ヨルシカも）が止まる**ので、2026-10-15 に Developer プランにしていた。配信トレンドを D1 に移したので無料に戻す。
 月の途中で無料に戻すとその月の読み取りはそのまま数えられるので、5億行に近い月に戻すと止まる。
 配信トレンドの Turso の DB は、戻し用にしばらく残している（読み書きはゼロ）。
+2026-11-13 に、コードから Turso への切り替え（`DB_BACKEND`）・移行の確認用の `DB_LOG_FILE`・`@libsql/client` を外した。
+Turso に戻すときは、このコミットの前に戻す。
 （Turso の CLI は Windows では WSL が必要なので入れていない）
 
 毎時の記録から作る結果は、`unstable_cache` の鍵に「その配信元の収集の回」（`captureHour`。台帳の
@@ -382,8 +384,7 @@ videos.list の回数は、監視リストの人数と「配信予定・配信�
 （配信者の上位を日ごとの集計14日分から選ぶので、1時間ごとだと読み取り枠を使いすぎる）。
 この3つは**ビルド時に Twitch API と DB を読む**ので、Workers Builds の
 「Build variables」に `TWITCH_CLIENT_*` と DB の鍵を入れてある（無いとビルドが失敗する）。
-ビルドは Worker の外なので D1 のバインディングが使えず、HTTP API で読む。そのため `D1_API_TOKEN` と `DB_BACKEND=d1` が要る
-（`DB_BACKEND` が無いと Turso を読みにいく。Turso のコードを外すまでの移行中の切り替え）。
+ビルドは Worker の外なので D1 のバインディングが使えず、HTTP API で読む。そのため `D1_API_TOKEN` が要る。
 Twitch のトークン取得を作り置き（force-cache）にしたことで `ƒ` から `○` に変わった
 （以前は no-store だったので、トークンを使うページが全部 `ƒ` になっていた）。
 
@@ -530,11 +531,8 @@ PC は「配信元の丸ボタン（左）／地域とカード・リスト（�
 ```
 TWITCH_CLIENT_ID
 TWITCH_CLIENT_SECRET
-DB_BACKEND                 d1（D1 を使う）。無いと Turso。Turso のコードを外すまでの移行中の切り替え
 D1_API_TOKEN               D1 の HTTP API の鍵（Cloudflare の API トークン。D1 の編集だけを許可）。ビルド・next dev・スクリプト用。
                            本番の Worker はバインディングを使うので要らない。名前を CLOUDFLARE_API_TOKEN にしない（wrangler がデプロイに使ってしまう）
-TURSO_DATABASE_URL         移行前の DB（戻し用。Turso のコードを外したら消す）
-TURSO_AUTH_TOKEN
 YOUTUBE_API_KEY
 TWITCASTING_CLIENT_ID      ツイキャスのアプリ（https://twitcasting.tv/developer.php。Read only）
 TWITCASTING_CLIENT_SECRET
@@ -707,10 +705,8 @@ probeの結果がある人でも検索は妨げないようにするため。
     Cloudflare が配信時にスクリプトを差し込むので、コードには書かない（書くと二重計測になる）。
     新しいサブドメインのサイトも自動で対象になる
 12. ~~デプロイの自動化~~ Workers Builds で main への push ごとに自動デプロイ
-13. **Turso の読み取りの測定（2026-10-18）** 10/15〜17 に入れた読み取りを減らす変更（作り置き・`daily_summaries`・
-    `today_peaks`）が効いているかを、Turso の Usage と Top Queries で確かめる。
-    デプロイすると作り置きが消えて読み取りが一時的に増え、効果が測れないので、**この日は配信トレンドのコードを変えず push もしない**
-    （`.md` だけの変更はビルドされないので可）。分かったことはここに書く
+13. ~~Turso の読み取りの測定（2026-10-18）~~ 測らないまま D1 に移したので、やめた（2026-11-13）。
+    D1 での読み取りは `npx wrangler d1 info stream-trends`（2026-11-13 の直近24時間で約3,000万行。込みの枠 月250億行の約4%）
 14. **配信者の診断（後でやる。2026-10-18 オーナーと方針を決めた）**
     - 好きな配信者を選ぶと、共通点（よく遊ぶゲーム・配信する時間帯・1回の配信の長さ・配信元・規模）から似た配信者をすすめる。
       選んだ人より小さい人も出す（知っている人だけでは発見にならないため）
@@ -722,10 +718,19 @@ probeの結果がある人でも検索は妨げないようにするため。
       （Google から配信者ページに直接来る人にも届くため）
     - 似ている度合いの計算は純粋な関数に切り出し、自動テスト（Vitest）を書く。このリポジトリで最初のテストにする
 15. **Turso の後片付け（D1 に移した 2026-11-07 から1週間ほど様子を見てから）**
-    - Turso を無料プランに戻す（その月の読み取りが5億行より十分少ないうちに。上の「Turso」の項）
-    - `lib/db.ts` の Turso の分かれ道と `DB_BACKEND`、移行の確認用の `DB_LOG_FILE`、`scripts/db.mjs` の Turso、
-      `@libsql/client`、`TURSO_*` の Secret とビルド変数を消す
+    - 2026-11-13 に D1 の様子を確かめた: Twitch・YouTube・Kick の毎時の収集と日ごとの集計は動いている。
+      読み取り 1日約3,000万行・書き込み 1日約44万行（どちらも込みの枠に収まる）
+    - ~~`lib/db.ts` の Turso の分かれ道と `DB_BACKEND`、移行の確認用の `DB_LOG_FILE`、`scripts/db.mjs` の Turso、`@libsql/client`~~ 2026-11-13 に外した
+    - 残り: Turso を無料プランに戻す（その月の読み取りが5億行より十分少ないうちに。上の「Turso」の項。Usage の画面で確かめてから）、
+      `DB_BACKEND`・`TURSO_*` の Secret とビルド変数と `.env.local` の行を消す
     - 配信トレンドの Turso の DB を消す時期はオーナーが決める（消す前に `/dump` で SQL を取って残しておく）
+16. ~~ツイキャスの収集が 2026-10-28 から止まっていた~~ 2026-11-14 に直した。
+    - 最後の記録は 2026-10-28 09:48（日本時間）。ツイキャス API が `401 Invalid token`（code 1000）を返していた
+    - 原因: `.env.local` と Worker の Secret の `TWITCASTING_CLIENT_SECRET` が、開発者ページ（https://twitcasting.tv/developer.php →「配信トレンド」）の値と違っていた
+      （ClientID は同じ。アプリは有効で、ページの最終更新は 2026-10-11 のまま）。なぜ違う値になったかは分からない
+    - 直し方: オーナーがページの値を `.env.local` に貼り、`npx wrangler secret put TWITCASTING_CLIENT_SECRET` で本番に入れた（ビルド不要）。
+      収集を手で1回呼んで、D1 に100件入ったのを確かめた。止まっていた 10/28〜11/14 の記録は取り戻せない
+    - **残り: 収集が止まったら気づける仕組み。** 失敗は cron-worker のログ（observability）に出るだけで、誰にも知らされず2週間以上気づかなかった
 
 ## 方針
 
