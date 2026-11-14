@@ -602,8 +602,8 @@ Vercel は GitHub と連携したままなので push すると動くが、ア�
 ```
 毎時23分 cron-worker の checkHealth（cron-worker/src/index.ts）
   → サイトの /api/cron/health に「配信元ごとの最新の毎時の記録の時刻」を聞く
-  → 90分より新しい → https://hc-ping.com/<Ping key>/stream-trends-<配信元>        （成功の合図）
-    90分より古い・無い → https://hc-ping.com/<Ping key>/stream-trends-<配信元>/fail （失敗の合図。すぐメール）
+  → 140分より新しい → https://hc-ping.com/<Ping key>/stream-trends-<配信元>        （成功の合図）
+    140分より古い・無い → https://hc-ping.com/<Ping key>/stream-trends-<配信元>/fail （失敗の合図。すぐメール）
 ```
 
 - **「失敗したか」ではなく「新しい記録が入っているか」を見る。** API の失敗・成功したのに0件・サイトが落ちている・
@@ -614,10 +614,13 @@ Vercel は GitHub と連携したままなので push すると動くが、ア�
   直ったら知らせる、も向こうの仕組みで、cron-worker は状態を持たない
 - 見張りは4つ（`stream-trends-twitch` / `-youtube` / `-twitcasting` / `-kick`）。最初の合図で自動で作られる（`?create=1`）。
   設定は **Period 1時間・Grace 1時間**（自動で作られると 1日・1時間 なので、作られた後に画面で直した）
-- 知らせが届くまで：収集が止まると約1.5〜2.5時間（90分を超えた次の23分）。サイトや cron-worker が止まると、最後の合図から約2時間
-- 90分にしたのは、1回だけの一時的な失敗では知らせず、2回続けて記録が増えないと知らせるため。ちょうど60分の倍数にしないのは、
-  ツイキャスの収集に2〜3分かかり、記録の時刻が少し後ろにずれるため（48分の回が50分台になる）
-- メールの本文（Last Ping Body）に「twitcasting: 最新の記録 …（◯分前。90分より古いと止まったとみなす）」が載る。
+- 知らせが届くまで：収集が止まると、最後の記録から約2.5〜3時間（2回続けて取りこぼした後の23分）。
+  サイトや cron-worker が止まると、最後の合図から約2時間
+- 140分にしたのは、1回だけの取りこぼし（一時的な API の不調・デプロイの瞬間）では知らせず、2回続けて記録が増えないと知らせるため。
+  見張りの23分の時点での記録の古さは、1回取りこぼすと最大130分（Kick）、2回続けると最小153分（ツイキャス。収集に2〜3分かかり記録が50分台になる）。
+  その間を取った（計算の表は cron-worker/src/index.ts の `DEFAULT_STALE_MINUTES`）。最初は90分にしていて、1回の取りこぼしで知らせる値だった
+  （2026-11-15、デプロイと重なった YouTube の23:38 UTC の1回の取りこぼしで気づいた）。**収集の時刻を変えたら計算し直す**
+- メールの本文（Last Ping Body）に「twitcasting: 最新の記録 …（◯分前。140分より古いと止まったとみなす）」が載る。
   healthchecks.io の画面で見張りを開くと、毎時の合図とこの文の記録が見られる
 - 鍵は cron-worker の Secret `HEALTHCHECKS_PING_KEY`（healthchecks.io の SETTINGS → Ping key）。知っている人は誰でも合図を送れるので秘密にする。
   無いあいだ見張りは何もしない
