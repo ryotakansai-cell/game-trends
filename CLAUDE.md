@@ -384,7 +384,10 @@ videos.list の回数は、監視リストの人数と「配信予定・配信�
 一覧の結果を `unstable_cache` で5分作り置きしている（7日分の集計を毎回読まないため）。`/sitemap.xml` も `○` だが1日1回
 （配信者の上位を日ごとの集計14日分から選ぶので、1時間ごとだと読み取り枠を使いすぎる）。
 この3つは**ビルド時に Twitch API と DB を読む**ので、Workers Builds の
-「Build variables」に `TWITCH_CLIENT_*` と DB の鍵を入れてある（無いとビルドが失敗する）。
+「Build variables」に `TWITCH_CLIENT_*` と `D1_API_TOKEN` を入れてある（無いとビルドが失敗する）。
+**Build variables は本番の Secret（Runtime variables）とは別の欄。** 本番の Secret に入れてもビルドには渡らない。
+2026-11-07 に D1 へ移したときは Build variables が `TURSO_*` のままで、ビルドの作り置きだけ Turso を読み続けていた。
+Turso の道を外した 2026-11-14 のビルドが「D1_API_TOKEN が未設定です」で失敗して気づき、`D1_API_TOKEN` を足した（`TURSO_*` は消した）。
 ビルドは Worker の外なので D1 のバインディングが使えず、HTTP API で読む。そのため `D1_API_TOKEN` が要る。
 Twitch のトークン取得を作り置き（force-cache）にしたことで `ƒ` から `○` に変わった
 （以前は no-store だったので、トークンを使うページが全部 `ƒ` になっていた）。
@@ -779,8 +782,10 @@ probeの結果がある人でも検索は妨げないようにするため。
     - 2026-11-13 に D1 の様子を確かめた: Twitch・YouTube・Kick の毎時の収集と日ごとの集計は動いている。
       読み取り 1日約3,000万行・書き込み 1日約44万行（どちらも込みの枠に収まる）
     - ~~`lib/db.ts` の Turso の分かれ道と `DB_BACKEND`、移行の確認用の `DB_LOG_FILE`、`scripts/db.mjs` の Turso、`@libsql/client`~~ 2026-11-13 に外した
-    - 残り: Turso を無料プランに戻す（その月の読み取りが5億行より十分少ないうちに。上の「Turso」の項。Usage の画面で確かめてから）、
-      `DB_BACKEND`・`TURSO_*` の Secret とビルド変数と `.env.local` の行を消す
+    - ~~`DB_BACKEND`・`TURSO_*` の Secret とビルド変数と `.env.local` の行~~ 2026-11-15 に消した（新しい版が本番に出たのを確かめてから）
+    - 2026-11-14 の Turso の使用量（11月の請求期間）: 読み取り 2.08億行（配信トレンド 2.07億・ヨルシカ 120万）・書き込み 296万行・容量 410MB。
+      無料プランの上限（読み取り月5億行・書き込み月1,000万行・容量5GB）に収まる。プランは Developer（月 $5.99。11月分は請求済み）
+    - 残り: Turso を無料プランに戻す（Billing → Change Plan → Free → Downgrade。オーナーの確認を取ってから）
     - 配信トレンドの Turso の DB を消す時期はオーナーが決める（消す前に `/dump` で SQL を取って残しておく）
 16. ~~ツイキャスの収集が 2026-10-28 から止まっていた~~ 2026-11-14 に直した。
     - 最後の記録は 2026-10-28 09:48（日本時間）。ツイキャス API が `401 Invalid token`（code 1000）を返していた
