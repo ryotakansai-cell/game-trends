@@ -97,6 +97,7 @@ app/
     ├── cron/play-snapshot/route.ts   毎時: ゲームを遊んでいる人数（Steam・Roblox）を play_snapshots に記録
     ├── cron/twitcasting-snapshot/route.ts ツイキャス: 毎時DBに保存（おすすめ上位100 + 名寄せ済みの人）
     ├── cron/kick-snapshot/route.ts   Kick: 毎時DBに保存（日本語の上位100 + 全世界の上位100 + 名寄せ済みの人）
+    ├── cron/health/route.ts          収集の見張り用：配信元ごとの最新の毎時の記録の時刻を返す（読むだけ。下の「収集の見張り」）
     └── cron/appstore/route.ts        App Store の順位表を受け取って保存（POST。GitHub Actions が RSS を送ってくる）
 components/
 ├── SiteHeader.tsx              全ページ共通のヘッダー（ホーム + 下線ナビ）
@@ -546,8 +547,9 @@ CRON_SECRET
 本番の値は Cloudflare の Worker の Secret に置く。`.env.local` を変えたら、
 プロジェクトのフォルダで `npx wrangler secret bulk .env.local` を実行すれば
 まとめて反映される（値は表示されない。Secret の変更は即時反映でビルド不要）。
-`cron-worker` には `CRON_SECRET` だけを、`cron-worker` フォルダで
-`npx wrangler secret put CRON_SECRET` で入れる（フォルダを間違えるとサイト側に入る）。
+`cron-worker` には `CRON_SECRET`・`GITHUB_TOKEN`（App Store 用）・`HEALTHCHECKS_PING_KEY`（下の「収集の見張り」）を、
+`cron-worker` フォルダで `npx wrangler secret put CRON_SECRET` のように1つずつ入れる（フォルダを間違えるとサイト側に入る）。
+PowerShell 5.1 では `cd cron-worker && …` の `&&` が使えないので、`cd` と `npx …` を2行に分けて打つ。
 GitHub Secrets（`CRON_SECRET` / `SITE_URL`）は手動実行のワークフロー用。
 `BLUESKY_*` は手元から誤って投稿しないよう `.env.local` に入れず、`npx wrangler secret put BLUESKY_HANDLE` のように
 個別に入れる（ヨルシカと同じ）。無いあいだは投稿しない。入れた後は
@@ -586,7 +588,60 @@ cd cron-worker && npm run deploy   cron の Worker をデプロイする
 Windows では OpenNext のビルドがシンボリックリンクを作るため、Windows の
 「開発者モード」をオンにしておく必要がある（設定 → システム → 詳細設定）。
 cron-worker は自動デプロイの対象外（変更したら手元で `npm run deploy`）。
-Vercel は GitHub と連携したままなので push すると動くが、アカウント停止中で無関係。
+Vercel は GitHub と連携したままなので push すると動くが、アカウント停止中で無関係
+（push のたびに「Production deployment failed」のメールが来るが無視してよい）。
+
+## 収集の見張り（healthchecks.io）
+
+**毎時の収集（Twitch・YouTube・ツイキャス・Kick）が止まると、数時間以内にオーナーにメールが届く。**
+2026-10-28 からツイキャスの収集が2週間以上止まっていたのに、失敗が cron-worker のログに出るだけで誰も気づかなかった
+（下の「今後の予定」16）ので、2026-11-14 に入れた。
+
+仕組み：
+
+```
+毎時23分 cron-worker の checkHealth（cron-worker/src/index.ts）
+  → サイトの /api/cron/health に「配信元ごとの最新の毎時の記録の時刻」を聞く
+  → 90分より新しい → https://hc-ping.com/<Ping key>/stream-trends-<配信元>        （成功の合図）
+    90分より古い・無い → https://hc-ping.com/<Ping key>/stream-trends-<配信元>/fail （失敗の合図。すぐメール）
+```
+
+- **「失敗したか」ではなく「新しい記録が入っているか」を見る。** API の失敗・成功したのに0件・サイトが落ちている・
+  cron-worker や Cloudflare の Cron 自体が動かない、のどれでも気づける
+- healthchecks.io（https://healthchecks.io 。無料の Hobbyist で見張り20個まで。ログインはオーナーの Gmail）は
+  「決まった間隔で合図が来るか」を見張る外部のサービス。**合図が来ないこと自体で知らせる**ので、cron-worker ごと止まっても
+  メールが届く（自前でメールを送る方式だと、送る側が止まると何も来ない）。止まっている間に毎時メールしない・
+  直ったら知らせる、も向こうの仕組みで、cron-worker は状態を持たない
+- 見張りは4つ（`stream-trends-twitch` / `-youtube` / `-twitcasting` / `-kick`）。最初の合図で自動で作られる（`?create=1`）。
+  設定は **Period 1時間・Grace 1時間**（自動で作られると 1日・1時間 なので、作られた後に画面で直した）
+- 知らせが届くまで：収集が止まると約1.5〜2.5時間（90分を超えた次の23分）。サイトや cron-worker が止まると、最後の合図から約2時間
+- 90分にしたのは、1回だけの一時的な失敗では知らせず、2回続けて記録が増えないと知らせるため。ちょうど60分の倍数にしないのは、
+  ツイキャスの収集に2〜3分かかり、記録の時刻が少し後ろにずれるため（48分の回が50分台になる）
+- メールの本文（Last Ping Body）に「twitcasting: 最新の記録 …（◯分前。90分より古いと止まったとみなす）」が載る。
+  healthchecks.io の画面で見張りを開くと、毎時の合図とこの文の記録が見られる
+- 鍵は cron-worker の Secret `HEALTHCHECKS_PING_KEY`（healthchecks.io の SETTINGS → Ping key）。知っている人は誰でも合図を送れるので秘密にする。
+  無いあいだ見張りは何もしない
+- 見張りの SQL は1回あたり約5,000行を読む（2026-11-14 の実測。1日約13万行で D1 の読み取り全体の0.4%ほど）。
+  配信元ごとに `captured_at` の索引を新しい方から読み、その配信元の行が見つかったら止める（`LIMIT 1`）。
+  GROUP BY でまとめて数えると、直近1時間だけで約5.7万行を読んだ
+- 配信元を足したら、cron-worker の `WATCHED_PLATFORMS` にも足す（サイトの `PLATFORM_IDS` とは別に書いてある。
+  サイト側で1つ抜けたときも「記録なし」として気づくため）
+- ほかの収集（Steam・Roblox の人数、App Store、日ごとの集計、Bluesky の投稿）は見張っていない
+
+**試し方（わざと止まったことにする）。** 本番に何も書き込まずに、本物のメールが届くかを確かめられる（2026-11-14 に実際に試して、4通届いた）：
+
+1. `cron-worker/.dev.vars`（.gitignore 済み）に `CRON_SECRET=` と `HEALTHCHECKS_PING_KEY=` を書いておく
+2. プロジェクトのフォルダで `npm run dev`（サイトを手元で動かす。D1 は HTTP API で本番を読む）
+3. `cron-worker` フォルダで `npx wrangler dev --test-scheduled --port 8788 --var SITE_URL:http://localhost:3000 --var STALE_MINUTES:0`
+   （`STALE_MINUTES:0` で「0分より古い記録は止まった」とみなす＝全部が止まった扱い）
+4. ブラウザか curl で `http://localhost:8788/__scheduled?cron=health` を開く → 「DOWN | stream-trends-twitch」などのメールが4通届く
+5. 戻すときは `--var STALE_MINUTES:0` を外して起動し直し、同じ URL を開く → 4つとも「元気」に戻り、
+   「UP | stream-trends-twitch」などのメールが4通届く（止まっていた時間も書いてある。2026-11-14 に確認）
+
+`cron=health` は見張りだけを動かす手元用の入口（`JOBS` の `health`。`wrangler.jsonc` の triggers に無いので本番では動かない）。
+`cron=23 * * * *` で試すと、Twitch の収集まで本番の D1 に書き込んでしまう。
+**`wrangler dev` を止めたつもりでも、裏の workerd が 8788 番を持ったまま残ることがある**（2026-11-14。前の設定のまま動いた）。
+起動し直すときは、ポートが空いているか確かめる（PowerShell で `Get-NetTCPConnection -LocalPort 8788 -State Listen`）。
 
 ## 名寄せ（クロスプラットフォームの人物統合）の手順
 
@@ -730,7 +785,8 @@ probeの結果がある人でも検索は妨げないようにするため。
       （ClientID は同じ。アプリは有効で、ページの最終更新は 2026-10-11 のまま）。なぜ違う値になったかは分からない
     - 直し方: オーナーがページの値を `.env.local` に貼り、`npx wrangler secret put TWITCASTING_CLIENT_SECRET` で本番に入れた（ビルド不要）。
       収集を手で1回呼んで、D1 に100件入ったのを確かめた。止まっていた 10/28〜11/14 の記録は取り戻せない
-    - **残り: 収集が止まったら気づける仕組み。** 失敗は cron-worker のログ（observability）に出るだけで、誰にも知らされず2週間以上気づかなかった
+    - 失敗は cron-worker のログ（observability）に出るだけで、誰にも知らされず2週間以上気づかなかった。
+      ~~収集が止まったら気づける仕組み~~ 2026-11-14 に healthchecks.io での見張りを入れた（上の「収集の見張り」）
 
 ## 方針
 
